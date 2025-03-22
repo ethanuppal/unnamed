@@ -12,10 +12,10 @@
 // You should have received a copy of the GNU General Public License along with
 // this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use std::{any::type_name, error::Error, marker::PhantomData, ptr};
+use std::{error::Error, marker::PhantomData, ptr};
 
 use accessibility_sys::{
-    kAXTrustedCheckOptionPrompt, AXIsProcessTrustedWithOptions,
+    AXIsProcessTrustedWithOptions, kAXTrustedCheckOptionPrompt,
 };
 use cocoa::{
     appkit::NSRunningApplication,
@@ -24,8 +24,8 @@ use cocoa::{
 };
 use core_foundation_sys::{
     base::{
-        kCFAllocatorDefault, CFGetRetainCount, CFIndex, CFRelease, CFRetain,
-        CFTypeRef,
+        CFGetRetainCount, CFIndex, CFRelease, CFRetain, CFTypeRef,
+        kCFAllocatorDefault,
     },
     dictionary::CFDictionaryCreate,
     number::kCFBooleanTrue,

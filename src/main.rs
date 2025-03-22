@@ -14,7 +14,7 @@
 
 use cocoa::appkit::NSRunningApplication;
 use wise::{
-    has_accessibility_permissions, running_apps_with_bundle_id, WiseError,
+    WiseError, has_accessibility_permissions, running_apps_with_bundle_id,
 };
 
 #[snafu::report]
