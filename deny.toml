@@ -12,17 +12,33 @@ all-features = true
 [bans]
 multiple-versions = "deny"
 wildcards = "warn"
+
 allow = [
   { crate = "wise" },
   { crate = "core-foundation-sys@0.8.7", reason = "provides low-level API to CoreFoundation" },
   { crate = "accessibility-sys@0.1.3", reason = "provides low-level API to ApplicationServices accessibility" },
-  { crate = "snafu@0.8.5", reason = "ergonomic error handling" },
-  { crate = "snafu-derive@0.8.5", reason = "proc-macro support for snafu error handling" },
-  { crate = "proc-macro2@1.0.94", reason = "required by snafu-derive and quote" },
-  { crate = "quote@1.0.40", reason = "required by snafu-derive" },
-  { crate = "syn@2.0.100", reason = "required by snafu-derive for parsing Rust code" },
-  { crate = "heck@0.5.0", reason = "used by snafu-derive for case conversions" },
-  { crate = "unicode-ident@1.0.18", reason = "dependency of proc-macro2 for identifiers" },
+
+  { crate = "snafu@0.8.5" },
+  { crate = "snafu-derive@0.8.5" },
+  { crate = "proc-macro2@1.0.94" },
+  { crate = "quote@1.0.40" },
+  { crate = "syn@2.0.100" },
+  { crate = "heck@0.5.0" },
+  { crate = "unicode-ident@1.0.18" },
+
+  { crate = "cocoa@0.26.0", reason = "needed for macOS bindings" },
+  { crate = "cocoa-foundation@0.2.0", reason = "needed for macOS bindings" },
+  { crate = "core-foundation@0.10.0", reason = "needed for macOS Core Foundation support" },
+  { crate = "core-graphics@0.24.0", reason = "needed for macOS graphics API access" },
+  { crate = "core-graphics-types@0.2.0", reason = "needed for macOS graphics API access" },
+  { crate = "foreign-types@0.5.0", reason = "FFI support for macOS types" },
+  { crate = "foreign-types-shared@0.3.1", reason = "FFI support for macOS types" },
+  { crate = "foreign-types-macros@0.2.3", reason = "macros for foreign-types crate" },
+  { crate = "block@0.1.6", reason = "required for Obj-C block handling" },
+  { crate = "objc@0.2.7", reason = "required for Obj-C interop" },
+  { crate = "bitflags@2.9.0", reason = "provides flag types for system APIs" },
+  { crate = "libc@0.2.171", reason = "required for system FFI" },
+  { crate = "malloc_buf@0.0.6", reason = "required for Obj-C memory management" },
 ]
 
 [sources]

@@ -10,5 +10,8 @@ accessibility-sys = { version = "0.1.3", default-features = false }
 cocoa = { git = "https://github.com/ethanuppal/core-foundation-rs", rev = "2aab901092848b435f8eb30670e63259e6d8f41a" }
 snafu = { version = "0.8.5", default-features = false, features = ["std"] }
 
+[patch.crates-io]
+core-foundation-sys = { git = "https://github.com/ethanuppal/core-foundation-rs", rev = "2aab901092848b435f8eb30670e63259e6d8f41a" }
+
 [lints.clippy]
 undocumented_unsafe_blocks = "forbid"
