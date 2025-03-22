@@ -15,7 +15,7 @@
 use std::{error::Error, marker::PhantomData, ptr};
 
 use accessibility_sys::{
-    AXIsProcessTrustedWithOptions, kAXTrustedCheckOptionPrompt,
+    kAXTrustedCheckOptionPrompt, AXIsProcessTrustedWithOptions,
 };
 use cocoa::{
     appkit::NSRunningApplication,
@@ -24,8 +24,8 @@ use cocoa::{
 };
 use core_foundation_sys::{
     base::{
-        CFGetRetainCount, CFIndex, CFRelease, CFRetain, CFTypeRef,
-        kCFAllocatorDefault,
+        kCFAllocatorDefault, CFGetRetainCount, CFIndex, CFRelease, CFRetain,
+        CFTypeRef,
     },
     dictionary::CFDictionaryCreate,
     number::kCFBooleanTrue,
@@ -102,11 +102,10 @@ impl<Inner> Rc<*mut Inner> {
     /// You must ensure the returned pointer lives no longer than any `Rc`
     /// whence it comes.
     pub unsafe fn get(&self) -> *mut Inner {
-        // SAFETY:
-        // By the invariant, since we have a reference to a `Rc`, not all `Rc`s
-        // referring to the pointer have been dropped, so by the invariant this
-        // pointer is valid. However, we leave the user to responsibly use it
-        // from this call.
+        // SAFETY: By the invariant, since we have a reference to a `Rc`, not
+        // all `Rc`s referring to the pointer have been dropped, so by
+        // the invariant this pointer is valid. However, we leave the
+        // user to responsibly use it from this call.
         self.0 as *mut Inner
     }
 }
@@ -130,42 +129,46 @@ impl<Inner> Rc<*const Inner> {
     /// You must ensure the returned pointer lives no longer than any `Rc`
     /// whence it comes.
     pub unsafe fn get(&self) -> *const Inner {
-        // SAFETY:
-        // By the invariant, since we have a reference to a `Rc`, not all `Rc`s
-        // referring to the pointer have been dropped, so by the invariant this
-        // pointer is valid. However, we leave the user to responsibly use it
-        // from this call.
+        // SAFETY: By the invariant, since we have a reference to a `Rc`, not
+        // all `Rc`s referring to the pointer have been dropped, so by
+        // the invariant this pointer is valid. However, we leave the
+        // user to responsibly use it from this call.
         self.0 as *const Inner
     }
 }
 
+// SAFETY: Only use `<Rc<T> as Clone>` when `T` is a pointer type that can be
+// managed by CoreFoundation.
 impl<Inner> Clone for Rc<*const Inner> {
     fn clone(&self) -> Self {
-        // SAFETY:
-        // By the invariant, since we have a reference to a `Rc`, not all `Rc`s
-        // referring to the pointer have been dropped, so by the invariant this
-        // pointer is valid and we can call `CFRetain` on it.
+        // SAFETY: By the invariant, since we have a reference to a `Rc`, not
+        // all `Rc`s referring to the pointer have been dropped, so by
+        // the invariant this pointer is valid and we can call
+        // `CFRetain` on it.
         Self(unsafe { CFRetain(self.0) }, PhantomData)
     }
 }
 
+// SAFETY: Only use `<Rc<T> as Clone>` when `T` is a pointer type that can be
+// managed by CoreFoundation.
 impl<Inner> Clone for Rc<*mut Inner> {
     fn clone(&self) -> Self {
-        // SAFETY:
-        // By the invariant, since we have a reference to a `Rc`, not all `Rc`s
-        // referring to the pointer have been dropped, so by the invariant this
-        // pointer is valid and we can call `CFRetain` on it.
+        // SAFETY: By the invariant, since we have a reference to a `Rc`, not
+        // all `Rc`s referring to the pointer have been dropped, so by
+        // the invariant this pointer is valid and we can call
+        // `CFRetain` on it.
         Self(unsafe { CFRetain(self.0) }, PhantomData)
     }
 }
 
-// undefined when T is not a pointer
+// SAFETY: Only use `<Rc<T> as Drop>` when `T` is a pointer type that can be
+// managed by CoreFoundation.
 impl<T> Drop for Rc<T> {
     fn drop(&mut self) {
-        // SAFETY:
-        // By the invariant, since we have a reference to a `Rc`, not all `Rc`s
-        // referring to the pointer have been dropped, so by the invariant this
-        // pointer is valid and we can call `CFRelease` on it.
+        // SAFETY: By the invariant, since we have a reference to a `Rc`, not
+        // all `Rc`s referring to the pointer have been dropped, so by
+        // the invariant this pointer is valid and we can call
+        // `CFRelease` on it.
         unsafe {
             CFRelease(self.0);
         }
@@ -181,7 +184,7 @@ trait ManageWithRc {
     unsafe fn into_rc(self) -> Option<Rc<id>>;
 
     /// Turn an object that is already being memory-managed by another object
-    /// into an [`Rc`].
+    /// into an [`Rc`]. Essentially, this creates a cloned `Rc`.
     ///
     /// # Safety
     ///
@@ -197,20 +200,21 @@ impl ManageWithRc for id {
 
     unsafe fn as_rc(&self) -> Option<Rc<id>> {
         // SAFETY: user responsibility
-        unsafe {
-            CFRetain(*self as CFTypeRef);
-            Rc::new_mut(*self)
-        }
+        let rc = unsafe { Rc::new_mut(*self) }?;
+
+        // SAFETY: `self` is nonnull, but the rest is user responsibility
+        unsafe { CFRetain(*self as CFTypeRef) };
+
+        Some(rc)
     }
 }
 
 pub fn has_accessibility_permissions() -> Result<bool, WiseError> {
-    // SAFETY:
-    // `kAXTrustedCheckOptionPrompt` should be initialized by CoreFoundation.
+    // SAFETY: `kAXTrustedCheckOptionPrompt` should be initialized by
+    // CoreFoundation.
     let keys = [unsafe { kAXTrustedCheckOptionPrompt } as CFTypeRef];
 
-    // SAFETY:
-    // `kCFBooleanTrue` should be initialized by CoreFoundation.
+    // SAFETY: `kCFBooleanTrue` should be initialized by CoreFoundation.
     let values = [unsafe { kCFBooleanTrue } as CFTypeRef];
 
     // SAFETY:
@@ -229,44 +233,45 @@ pub fn has_accessibility_permissions() -> Result<bool, WiseError> {
         .ok_or(WiseError::CouldNotCreateCFObject)
     }?;
 
-    // SAFETY:
-    // `options` is a valid dictionary of options.
+    // SAFETY: `options` is a valid dictionary of options.
     let is_trusted = unsafe { AXIsProcessTrustedWithOptions(options.get()) };
 
     Ok(is_trusted)
 }
 
-/// TODO: you have to drop each app you get in the array manually
 pub fn running_apps_with_bundle_id(
     bundle_id: &str,
 ) -> Result<Box<[Rc<id>]>, WiseError> {
     let mut running_apps;
 
-    // SAFETY: todo
-    unsafe {
-        let bundle_id_nsstring = NSString::alloc(nil)
-            .init_str(bundle_id)
-            .into_rc()
+    let bundle_id_nsstring =
+    // SAFETY: &str to NSString.
+        unsafe { NSString::alloc(nil).init_str(bundle_id).into_rc() }
             .ok_or(WiseError::CouldNotCreateCFObject)?;
 
-        let apps_nsarray =
-            NSRunningApplication::runningApplicationsWithBundleIdentifier(
-                nil,
-                bundle_id_nsstring.get(),
-            )
-            .into_rc()
-            .ok_or(WiseError::UnexpectedNull)?;
+    // SAFETY: `bundle_id_nsstring` is nonnull.
+    let apps_nsarray = unsafe {
+        NSRunningApplication::runningApplicationsWithBundleIdentifier(
+            nil,
+            bundle_id_nsstring.get(),
+        )
+        .into_rc()
+    }
+    .ok_or(WiseError::UnexpectedNull)?;
 
-        let count = NSArray::count(apps_nsarray.get()) as usize;
+    // SAFETY: `runningApplicationsWithBundleIdentifier` returns an `NSArray`.
+    let count = unsafe { NSArray::count(apps_nsarray.get()) } as usize;
 
-        running_apps = Vec::with_capacity(count);
-        for i in 0..count {
-            let running_app =
-                NSArray::objectAtIndex(apps_nsarray.get(), i as u64)
-                    .as_rc()
-                    .ok_or(WiseError::UnexpectedNull)?;
-            running_apps.push(running_app);
+    running_apps = Vec::with_capacity(count);
+    for i in 0..count {
+        // SAFETY: `runningApplicationsWithBundleIdentifier` returns an
+        // `NSArray`. Each element is managed by the `NSArray`, so we use
+        // `as_rc`.
+        let running_app = unsafe {
+            NSArray::objectAtIndex(apps_nsarray.get(), i as u64).as_rc()
         }
+        .ok_or(WiseError::UnexpectedNull)?;
+        running_apps.push(running_app);
     }
 
     Ok(running_apps.into_boxed_slice())
