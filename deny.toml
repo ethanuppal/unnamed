@@ -29,6 +29,8 @@ allow = [
 unknown-registry = "deny"
 unknown-git = "deny"
 required-git-spec = "rev"
+allow-git = ["https://github.com/ethanuppal/core-foundation-rs"]
+
 
 [licenses]
 allow = ["MIT", "Apache-2.0", "Unicode-3.0", "GPL-3.0"]

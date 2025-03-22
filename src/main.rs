@@ -12,7 +12,10 @@
 // You should have received a copy of the GNU General Public License along with
 // this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use wise::{has_accessibility_permissions, WiseError};
+use cocoa::appkit::NSRunningApplication;
+use wise::{
+    has_accessibility_permissions, running_apps_with_bundle_id, WiseError,
+};
 
 #[snafu::report]
 fn main() -> Result<(), WiseError> {
@@ -20,6 +23,16 @@ fn main() -> Result<(), WiseError> {
         "has accessibility perms: {}",
         has_accessibility_permissions()?
     );
+
+    let apps = running_apps_with_bundle_id("com.apple.Safari")?;
+    println!("{} apps", apps.len());
+    //SAFETY: test
+    unsafe {
+        for app in apps {
+            println!("retain count: {}", app.strong_count());
+            println!("pid: {}", app.get().processIdentifier());
+        }
+    }
 
     Ok(())
 }
