@@ -12,7 +12,8 @@
 // You should have received a copy of the GNU General Public License along with
 // this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use cocoa::appkit::NSRunningApplication;
+use cocoa::appkit::CGPoint;
+use core_graphics::display::{CGRect, CGSize};
 use snafu::whatever;
 use wise::{
     WiseError, has_accessibility_permissions, running_apps_with_bundle_id,
@@ -24,15 +25,22 @@ fn main() -> Result<(), WiseError> {
         whatever!("This program needs accessibility permissions to work");
     }
 
-    let apps = running_apps_with_bundle_id("com.apple.Safari")?;
-    println!("{} apps", apps.len());
-    //SAFETY: test
-    unsafe {
-        for app in apps {
-            println!("retain count: {}", app.strong_count());
-            println!("pid: {}", app.get().processIdentifier());
+    for app in running_apps_with_bundle_id("com.apple.Safari")? {
+        for mut window in app.get_windows()? {
+            window.resize(CGRect {
+                origin: CGPoint::new(100.0, 100.0),
+                size: CGSize::new(400.0, 800.0),
+            })?;
         }
     }
+    //println!("{} apps", apps.len());
+    ////SAFETY: test
+    //unsafe {
+    //    for app in apps {
+    //        println!("retain count: {}", app.strong_count());
+    //        println!("pid: {}", app.get().processIdentifier());
+    //    }
+    //}
 
     Ok(())
 }

@@ -12,32 +12,39 @@
 // You should have received a copy of the GNU General Public License along with
 // this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use std::{error::Error, ptr};
+use std::{
+    error::Error,
+    ptr::{self},
+};
 
 use accessibility_sys::{
-    AXIsProcessTrustedWithOptions, kAXTrustedCheckOptionPrompt,
+    AXError, AXIsProcessTrustedWithOptions, kAXTrustedCheckOptionPrompt,
 };
 use cocoa::{
     appkit::NSRunningApplication,
-    base::{id, nil},
+    base::nil,
     foundation::{NSArray, NSString},
 };
 use core_foundation_sys::{
-    base::{CFTypeRef, kCFAllocatorDefault},
-    dictionary::CFDictionaryCreate,
-    number::kCFBooleanTrue,
+    base::CFTypeRef, dictionary::CFDictionaryCreate, number::kCFBooleanTrue,
 };
 use memory::{ManageWithRc, Rc};
 use snafu::Snafu;
+use wrappers::App;
 
 pub mod memory;
+pub mod wrappers;
 
 #[derive(Debug, Snafu)]
 pub enum WiseError {
-    #[snafu(display("Failed to create or copy CoreFoundation object"))]
+    #[snafu(display(
+        "Failed to create or copy object allocated with CoreFoundation"
+    ))]
     CouldNotCreateCFObject,
     #[snafu(display("Apple API object was unexpectedly null"))]
     UnexpectedNull,
+    #[snafu(display("Accessibility API error: {code}"))]
+    AXError { code: AXError },
     #[snafu(whatever, display("{message}"))]
     Whatever {
         message: String,
@@ -60,7 +67,7 @@ pub fn has_accessibility_permissions() -> Result<bool, WiseError> {
     // - `values.as_ptr()` is likewise.
     let options = unsafe {
         Rc::new_const(CFDictionaryCreate(
-            kCFAllocatorDefault,
+            ptr::null(),
             keys.as_ptr(),
             values.as_ptr(),
             1,
@@ -78,9 +85,7 @@ pub fn has_accessibility_permissions() -> Result<bool, WiseError> {
 
 pub fn running_apps_with_bundle_id(
     bundle_id: &str,
-) -> Result<Box<[Rc<id>]>, WiseError> {
-    let mut running_apps;
-
+) -> Result<Box<[App<'_>]>, WiseError> {
     let bundle_id_nsstring =
     // SAFETY: &str to NSString.
         unsafe { NSString::alloc(nil).init_str(bundle_id).into_rc() }
@@ -99,7 +104,7 @@ pub fn running_apps_with_bundle_id(
     // SAFETY: `runningApplicationsWithBundleIdentifier` returns an `NSArray`.
     let count = unsafe { NSArray::count(apps_nsarray.get()) } as usize;
 
-    running_apps = Vec::with_capacity(count);
+    let mut running_apps = Vec::with_capacity(count);
     for i in 0..count {
         // SAFETY: `runningApplicationsWithBundleIdentifier` returns an
         // `NSArray`. Each element is managed by the `NSArray`, so we use
@@ -108,7 +113,9 @@ pub fn running_apps_with_bundle_id(
             NSArray::objectAtIndex(apps_nsarray.get(), i as u64).as_rc()
         }
         .ok_or(WiseError::UnexpectedNull)?;
-        running_apps.push(running_app);
+
+        // SAFETY: todo
+        running_apps.push(unsafe { App::from_nsapp(running_app, bundle_id) }?);
     }
 
     Ok(running_apps.into_boxed_slice())

@@ -30,9 +30,8 @@
 //    }
 //}
 
-use std::marker::PhantomData;
+use std::{marker::PhantomData, ptr::NonNull};
 
-use cocoa::base::id;
 use core_foundation_sys::base::{
     CFGetRetainCount, CFIndex, CFRelease, CFRetain, CFTypeRef,
 };
@@ -61,7 +60,10 @@ impl<Inner> Rc<*mut Inner> {
     ///
     /// # Safety
     ///
-    /// `pointer` is a valid Apple API object with a nonzero retain count.
+    /// `pointer` is a valid Apple API object with a nonzero retain count. If it
+    /// has a single retain count (e.g., it was just created) and all
+    /// further access to this object is done through `Rc` (using `Rc::get`
+    /// etc. in the documented manner), this object is safe to use.
     pub unsafe fn new_mut(pointer: *mut Inner) -> Option<Self> {
         if pointer.is_null() {
             None
@@ -81,6 +83,14 @@ impl<Inner> Rc<*mut Inner> {
         // user to responsibly use it from this call.
         self.0 as *mut Inner
     }
+
+    /// # Safety
+    ///
+    /// See [`Self::get`].
+    pub unsafe fn get_as_nonnull(&self) -> NonNull<Inner> {
+        // SAFETY: See `get`.
+        unsafe { NonNull::new_unchecked(self.0 as *mut Inner) }
+    }
 }
 
 impl<Inner> Rc<*const Inner> {
@@ -88,7 +98,10 @@ impl<Inner> Rc<*const Inner> {
     ///
     /// # Safety
     ///
-    /// `pointer` is a valid Apple API object with a nonzero retain count.
+    /// `pointer` is a valid Apple API object with a nonzero retain count. If it
+    /// has a single retain count (e.g., it was just created) and all
+    /// further access to this object is done through `Rc` (using `Rc::get`
+    /// etc. in the documented manner), this object is safe to use.
     pub unsafe fn new_const(pointer: *const Inner) -> Option<Self> {
         if pointer.is_null() {
             None
@@ -145,16 +158,17 @@ impl<T> Drop for Rc<T> {
         unsafe {
             CFRelease(self.0);
         }
+        //eprintln!("Dropping {}", std::any::type_name::<T>());
     }
 }
 
-pub trait ManageWithRc {
+pub trait ManageWithRc: Sized {
     /// Turn an object that you own into an [`Rc`].
     ///
     /// # Safety
     ///
     /// By using this function, you agree to the [`Rc`] invariant.
-    unsafe fn into_rc(self) -> Option<Rc<id>>;
+    unsafe fn into_rc(self) -> Option<Rc<Self>>;
 
     /// Turn an object that is already being memory-managed by another object
     /// into an [`Rc`]. Essentially, this creates a cloned `Rc`.
@@ -162,16 +176,33 @@ pub trait ManageWithRc {
     /// # Safety
     ///
     /// By using this function, you agree to the [`Rc`] invariant.
-    unsafe fn as_rc(&self) -> Option<Rc<id>>;
+    unsafe fn as_rc(&self) -> Option<Rc<Self>>;
 }
 
-impl ManageWithRc for id {
-    unsafe fn into_rc(self) -> Option<Rc<id>> {
+impl<Inner> ManageWithRc for *const Inner {
+    unsafe fn into_rc(self) -> Option<Rc<*const Inner>> {
+        // SAFETY: user responsibility
+        unsafe { Rc::new_const(self) }
+    }
+
+    unsafe fn as_rc(&self) -> Option<Rc<*const Inner>> {
+        // SAFETY: user responsibility
+        let rc = unsafe { Rc::new_const(*self) }?;
+
+        // SAFETY: `self` is nonnull, but the rest is user responsibility
+        unsafe { CFRetain(*self as CFTypeRef) };
+
+        Some(rc)
+    }
+}
+
+impl<Inner> ManageWithRc for *mut Inner {
+    unsafe fn into_rc(self) -> Option<Rc<*mut Inner>> {
         // SAFETY: user responsibility
         unsafe { Rc::new_mut(self) }
     }
 
-    unsafe fn as_rc(&self) -> Option<Rc<id>> {
+    unsafe fn as_rc(&self) -> Option<Rc<*mut Inner>> {
         // SAFETY: user responsibility
         let rc = unsafe { Rc::new_mut(*self) }?;
 
