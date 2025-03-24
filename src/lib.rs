@@ -54,6 +54,40 @@ pub enum UnnamedError {
     },
 }
 
+/// Duplicated from
+/// https://developer.apple.com/documentation/bundleresources/information-property-list/cfbundleidentifier?language=objc:
+///
+/// > A _bundle ID_ uniquely identifies a single app throughout the system. The
+/// > bundle ID string must contain only alphanumeric characters (A–Z, a–z, and
+/// > 0–9), hyphens (-), and periods (.). Typically, you use a reverse-DNS
+/// > format for bundle ID strings. Bundle IDs are case-insensitive.
+pub struct BundleID<'a>(&'a str);
+
+#[derive(Debug, Snafu)]
+pub enum BundleIDParseError {
+    #[snafu(display("Invalid character '{c}' at index {index} in bundle ID"))]
+    InvalidCharacter { index: usize, c: char },
+}
+
+impl<'a> TryFrom<&'a str> for BundleID<'a> {
+    type Error = BundleIDParseError;
+
+    fn try_from(value: &'a str) -> Result<Self, Self::Error> {
+        if let Some((problem_index, problem_char)) =
+            value.char_indices().find(|(_, c)| {
+                !(c.is_ascii_alphanumeric() || *c == '-' || *c == '.')
+            })
+        {
+            Err(BundleIDParseError::InvalidCharacter {
+                index: problem_index,
+                c: problem_char,
+            })
+        } else {
+            Ok(Self(value))
+        }
+    }
+}
+
 pub fn has_accessibility_permissions() -> Result<bool, UnnamedError> {
     // SAFETY: `kAXTrustedCheckOptionPrompt` should be initialized by
     // CoreFoundation.
@@ -85,11 +119,11 @@ pub fn has_accessibility_permissions() -> Result<bool, UnnamedError> {
 }
 
 pub fn running_apps_with_bundle_id(
-    bundle_id: &str,
+    bundle_id: BundleID,
 ) -> Result<Box<[App<'_>]>, UnnamedError> {
     let bundle_id_nsstring =
     // SAFETY: &str to NSString.
-        unsafe { NSString::alloc(nil).init_str(bundle_id).into_rc() }
+        unsafe { NSString::alloc(nil).init_str(bundle_id.0).into_rc() }
             .ok_or(UnnamedError::CouldNotCreateCFObject)?;
 
     // SAFETY: `bundle_id_nsstring` is nonnull.
@@ -115,8 +149,9 @@ pub fn running_apps_with_bundle_id(
         }
         .ok_or(UnnamedError::UnexpectedNull)?;
 
-        // SAFETY: todo
-        running_apps.push(unsafe { App::from_nsapp(running_app, bundle_id) }?);
+        running_apps
+            // SAFETY: todo
+            .push(unsafe { App::from_nsapp(running_app, bundle_id.0) }?);
     }
 
     Ok(running_apps.into_boxed_slice())
