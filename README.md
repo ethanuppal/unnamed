@@ -1,7 +1,7 @@
 # unnamed:  Extremely simple window layout engine for macOS
 
 > [!NOTE]
-> The name is a work-in-progress!
+> The name, in addition to the code, is a work-in-progress!
 
 This is currently just for me because I want to automatically pin apps to have specific border insets.
 Thus, the border insets are not configurable -- they will always be 8, 8, 6, 8 beecause those look best on my system.
@@ -29,6 +29,17 @@ cargo run --release -- com.apple.Safari net.kovidgoyal.kitty
 ```
 
 You will need to give `target/release/unnamed` accessibility permissions.
+
+> [!CAUTION]
+> Right now, I don't check for whether windows get resized afterward --- the next step is to (1) setup `AXObserver`s for when new windows are created, get moved, or get resized and (2) setup `NSNotification`s for when the specified apps are closed and reopened.
+
+## Layouts
+
+I plan to support three layout options:
+
+- full screen
+- left
+- right
 
 <!--## Move windows around-->
 <!---->
