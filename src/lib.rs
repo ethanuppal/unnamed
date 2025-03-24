@@ -21,13 +21,14 @@ use accessibility_sys::{
     AXError, AXIsProcessTrustedWithOptions, kAXTrustedCheckOptionPrompt,
 };
 use cocoa::{
-    appkit::NSRunningApplication,
+    appkit::{CGFloat, CGPoint, NSRunningApplication, NSScreen},
     base::nil,
     foundation::{NSArray, NSString},
 };
 use core_foundation_sys::{
     base::CFTypeRef, dictionary::CFDictionaryCreate, number::kCFBooleanTrue,
 };
+use core_graphics::display::{CGRect, CGSize};
 use memory::{ManageWithRc, Rc};
 use snafu::Snafu;
 use wrappers::App;
@@ -119,4 +120,19 @@ pub fn running_apps_with_bundle_id(
     }
 
     Ok(running_apps.into_boxed_slice())
+}
+
+pub fn get_screen_frame() -> CGRect {
+    // SAFETY: todo
+    let main_screen = unsafe { NSScreen::mainScreen(nil) };
+
+    // SAFETY: todo
+    let frame = unsafe { main_screen.frame() };
+
+    const NOTCH_HEIGHT: CGFloat = 40.0;
+
+    CGRect {
+        origin: CGPoint::new(frame.origin.x, frame.origin.y + NOTCH_HEIGHT),
+        size: CGSize::new(frame.size.width, frame.size.height - NOTCH_HEIGHT),
+    }
 }
