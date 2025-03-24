@@ -14,7 +14,7 @@ multiple-versions = "deny"
 wildcards = "warn"
 
 allow = [
-  { crate = "wise" },
+  { crate = "unnamed" },
   { crate = "core-foundation-sys@0.8.7", reason = "provides low-level API to CoreFoundation" },
   { crate = "accessibility-sys@0.1.3", reason = "provides low-level API to ApplicationServices accessibility" },
 

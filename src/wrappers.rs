@@ -35,7 +35,7 @@ use core_graphics::display::{CFIndex, CFTypeRef, CGRect, CGSize};
 use snafu::ResultExt;
 
 use crate::{
-    WiseError,
+    UnnamedError,
     memory::{ManageWithRc, Rc},
 };
 
@@ -47,7 +47,7 @@ pub enum AccessibilityElementKey {
 }
 
 impl AccessibilityElementKey {
-    fn as_cfstring(&self) -> Result<Rc<CFStringRef>, WiseError> {
+    fn as_cfstring(&self) -> Result<Rc<CFStringRef>, UnnamedError> {
         let string = match self {
             AccessibilityElementKey::Position => kAXPositionAttribute,
             AccessibilityElementKey::Size => kAXSizeAttribute,
@@ -68,7 +68,7 @@ impl AccessibilityElementKey {
                 kCFAllocatorNull,
             ))
         }
-        .ok_or(WiseError::CouldNotCreateCFObject)
+        .ok_or(UnnamedError::CouldNotCreateCFObject)
     }
 }
 
@@ -86,7 +86,7 @@ pub trait AccessibilityElement {
         &mut self,
         key: AccessibilityElementKey,
         value: CFTypeRef,
-    ) -> Result<(), WiseError> {
+    ) -> Result<(), UnnamedError> {
         let key_cfstring = key.as_cfstring().whatever_context(
             "Failed to construct CFString from accessibility key",
         )?;
@@ -101,7 +101,7 @@ pub trait AccessibilityElement {
         };
 
         if error_code != kAXErrorSuccess {
-            return Err(WiseError::AXError { code: error_code });
+            return Err(UnnamedError::AXError { code: error_code });
         }
 
         Ok(())
@@ -113,7 +113,7 @@ pub trait AccessibilityElement {
     unsafe fn get(
         &self,
         key: AccessibilityElementKey,
-    ) -> Result<Rc<CFTypeRef>, WiseError> {
+    ) -> Result<Rc<CFTypeRef>, UnnamedError> {
         let key_cfstring = key.as_cfstring().whatever_context(
             "Failed to construct CFString from accessibility key",
         )?;
@@ -130,11 +130,11 @@ pub trait AccessibilityElement {
         };
 
         if error_code != kAXErrorSuccess {
-            return Err(WiseError::AXError { code: error_code });
+            return Err(UnnamedError::AXError { code: error_code });
         }
 
         // SAFETY: todo
-        unsafe { Rc::new_const(result) }.ok_or(WiseError::UnexpectedNull)
+        unsafe { Rc::new_const(result) }.ok_or(UnnamedError::UnexpectedNull)
     }
 }
 
@@ -154,18 +154,18 @@ impl<'a> App<'a> {
     pub unsafe fn from_nsapp(
         app: Rc<id>,
         bundle_id: &'a str,
-    ) -> Result<Self, WiseError> {
+    ) -> Result<Self, UnnamedError> {
         // SAFETY: `app` is an `Rc`.
         let pid = unsafe { app.get().processIdentifier() };
 
         // SAFETY: todo
         let inner = unsafe { Rc::new_mut(AXUIElementCreateApplication(pid)) }
-            .ok_or(WiseError::CouldNotCreateCFObject)?;
+            .ok_or(UnnamedError::CouldNotCreateCFObject)?;
 
         Ok(Self(inner, bundle_id))
     }
 
-    pub fn get_windows(&self) -> Result<Box<[Window]>, WiseError> {
+    pub fn get_windows(&self) -> Result<Box<[Window]>, UnnamedError> {
         // SAFETY: todo
         let windows = unsafe { self.get(AccessibilityElementKey::Windows) }
             .whatever_context(
@@ -185,7 +185,7 @@ impl<'a> App<'a> {
                     as AXUIElementRef)
                     .as_rc()
             }
-            .ok_or(WiseError::UnexpectedNull)?;
+            .ok_or(UnnamedError::UnexpectedNull)?;
 
             // SAFETY: todo
             ax_windows.push(Window(ax_window, self.1));
@@ -205,7 +205,7 @@ impl AccessibilityElement for Window<'_> {
 }
 
 impl Window<'_> {
-    pub fn resize(&mut self, frame: CGRect) -> Result<(), WiseError> {
+    pub fn resize(&mut self, frame: CGRect) -> Result<(), UnnamedError> {
         let bundle_id = self.1;
 
         // SAFETY: ``&frame.origin` is a valid pointer and not mutably
@@ -216,7 +216,7 @@ impl Window<'_> {
                 &frame.origin as *const CGPoint as *const _,
             ))
         }
-        .ok_or(WiseError::CouldNotCreateCFObject)?;
+        .ok_or(UnnamedError::CouldNotCreateCFObject)?;
 
         // SAFETY: todo
         unsafe {
@@ -235,7 +235,7 @@ impl Window<'_> {
                 &frame.size as *const CGSize as *const _,
             ))
         }
-        .ok_or(WiseError::CouldNotCreateCFObject)?;
+        .ok_or(UnnamedError::CouldNotCreateCFObject)?;
 
         // SAFETY: todo
         unsafe {

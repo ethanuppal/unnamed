@@ -14,8 +14,8 @@
 
 use cocoa::appkit::CGFloat;
 use snafu::whatever;
-use wise::{
-    WiseError, get_screen_frame, has_accessibility_permissions,
+use unnamed::{
+    UnnamedError, get_screen_frame, has_accessibility_permissions,
     running_apps_with_bundle_id,
 };
 
@@ -25,7 +25,7 @@ const TOP_INSET: CGFloat = 6.0;
 const BOTTOM_INSET: CGFloat = 8.0;
 
 #[snafu::report]
-fn main() -> Result<(), WiseError> {
+fn main() -> Result<(), UnnamedError> {
     if !has_accessibility_permissions()? {
         whatever!("This program needs accessibility permissions to work");
     }

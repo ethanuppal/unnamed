@@ -37,7 +37,7 @@ pub mod memory;
 pub mod wrappers;
 
 #[derive(Debug, Snafu)]
-pub enum WiseError {
+pub enum UnnamedError {
     #[snafu(display(
         "Failed to create or copy object allocated with CoreFoundation"
     ))]
@@ -54,7 +54,7 @@ pub enum WiseError {
     },
 }
 
-pub fn has_accessibility_permissions() -> Result<bool, WiseError> {
+pub fn has_accessibility_permissions() -> Result<bool, UnnamedError> {
     // SAFETY: `kAXTrustedCheckOptionPrompt` should be initialized by
     // CoreFoundation.
     let keys = [unsafe { kAXTrustedCheckOptionPrompt } as CFTypeRef];
@@ -65,7 +65,7 @@ pub fn has_accessibility_permissions() -> Result<bool, WiseError> {
     // SAFETY:
     // - `keys.as_ptr()` is a valid pointer to a C array of at least 1
     //   pointer-sized value.
-    // - `values.as_ptr()` is likewise.
+    // - `values.as_ptr()` is likeunnamed.
     let options = unsafe {
         Rc::new_const(CFDictionaryCreate(
             ptr::null(),
@@ -75,7 +75,7 @@ pub fn has_accessibility_permissions() -> Result<bool, WiseError> {
             ptr::null(),
             ptr::null(),
         ))
-        .ok_or(WiseError::CouldNotCreateCFObject)
+        .ok_or(UnnamedError::CouldNotCreateCFObject)
     }?;
 
     // SAFETY: `options` is a valid dictionary of options.
@@ -86,11 +86,11 @@ pub fn has_accessibility_permissions() -> Result<bool, WiseError> {
 
 pub fn running_apps_with_bundle_id(
     bundle_id: &str,
-) -> Result<Box<[App<'_>]>, WiseError> {
+) -> Result<Box<[App<'_>]>, UnnamedError> {
     let bundle_id_nsstring =
     // SAFETY: &str to NSString.
         unsafe { NSString::alloc(nil).init_str(bundle_id).into_rc() }
-            .ok_or(WiseError::CouldNotCreateCFObject)?;
+            .ok_or(UnnamedError::CouldNotCreateCFObject)?;
 
     // SAFETY: `bundle_id_nsstring` is nonnull.
     let apps_nsarray = unsafe {
@@ -100,7 +100,7 @@ pub fn running_apps_with_bundle_id(
         )
         .into_rc()
     }
-    .ok_or(WiseError::UnexpectedNull)?;
+    .ok_or(UnnamedError::UnexpectedNull)?;
 
     // SAFETY: `runningApplicationsWithBundleIdentifier` returns an `NSArray`.
     let count = unsafe { NSArray::count(apps_nsarray.get()) } as usize;
@@ -113,7 +113,7 @@ pub fn running_apps_with_bundle_id(
         let running_app = unsafe {
             NSArray::objectAtIndex(apps_nsarray.get(), i as u64).as_rc()
         }
-        .ok_or(WiseError::UnexpectedNull)?;
+        .ok_or(UnnamedError::UnexpectedNull)?;
 
         // SAFETY: todo
         running_apps.push(unsafe { App::from_nsapp(running_app, bundle_id) }?);

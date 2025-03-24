@@ -1,8 +1,7 @@
-# wise: Automatic window resizer for macOS
+# unnamed:  Extremely simple window layout engine for macOS
 
 > [!NOTE]
-> The previous (working) version of this tool is on the `main` branch.
-> Development is now taking place on the `rust` branch.
+> The name is a work-in-progress!
 
 This is currently just for me because I want to automatically pin apps to have specific border insets.
 Thus, the border insets are not configurable -- they will always be 8, 8, 6, 8 beecause those look best on my system.
@@ -13,8 +12,8 @@ Thus, the border insets are not configurable -- they will always be 8, 8, 6, 8 b
 First, clone:
 
 ```shell
-git clone https://github.com/ethanuppal/wise.git
-cd wise
+git clone https://github.com/ethanuppal/unnamed.git
+cd unnamed
 ```
 
 Then, run:
@@ -29,14 +28,16 @@ For example:
 cargo run --release -- com.apple.Safari net.kovidgoyal.kitty
 ```
 
-## Move windows around
+You will need to give `target/release/unnamed` accessibility permissions.
 
-You can use RPC to port 12345:
-
-```shell
-curl -X POST http://localhost:12345 \
-    -H "Content-Type: application/json" \
-    -d '{"bundleID": "net.kovidgoyal.kitty", "position": "left"}'
-```
-
-Pass the bundle ID and the position (one of `"left"`, `"full"`, or `"right"`).
+<!--## Move windows around-->
+<!---->
+<!--You can use RPC to port 12345:-->
+<!---->
+<!--```shell-->
+<!--curl -X POST http://localhost:12345 \-->
+<!--    -H "Content-Type: application/json" \-->
+<!--    -d '{"bundleID": "net.kovidgoyal.kitty", "position": "left"}'-->
+<!--```-->
+<!---->
+<!--Pass the bundle ID and the position (one of `"left"`, `"full"`, or `"right"`).-->
