@@ -29,27 +29,29 @@ cd unnamed
 Then, run:
 
 ```shell
-cargo run --release -- <bundle IDs>
+cargo build --release
+./target/release/unnamed <bundle IDs>
 ```
 
 For example:
 
 ```shell
-cargo run --release -- com.apple.Safari net.kovidgoyal.kitty
+./target/release/unnamed -- com.apple.Safari net.kovidgoyal.kitty
 ```
 
 You will need to give `target/release/unnamed` accessibility permissions.
 
 > [!CAUTION]
-> Right now, I don't check for whether windows get resized afterward --- the next step is to (1) setup `AXObserver`s for when new windows are created, get moved, or get resized and (2) setup `NSNotification`s for when the specified apps are closed and reopened.
+> Right now, I don't check for whether windows get resized afterward --- the next step is to (1) setup `AXObserver`s for when new windows are created, ~~get moved, or get resized~~ and (2) setup `NSNotification`s for when the specified apps are closed and reopened.
 
 ## Layouts
 
-Three layout options are supported:
+Three layout options are supported (where `Super` is `Command-Control-Option`):
 
-- full screen
-- left
-- right
+- full screen (`Super-Shift-C`)
+- left (`Super-Shift-H`)
+- right (`Super-Shift-L`)
+- toggle floating (`Super-Shift-Space`)
 
 <!--## Move windows around-->
 <!---->
@@ -62,3 +64,13 @@ Three layout options are supported:
 <!--```-->
 <!---->
 <!--Pass the bundle ID and the position (one of `"left"`, `"full"`, or `"right"`).-->
+
+## Debugging
+
+This is for me on macOS:
+
+Address sanitizer:
+
+```shell
+ASAN_OPTIONS=detect_leaks=1:symbolize=1 RUSTFLAGS=-Zsanitizer=address cargo +nightly r -Z build-std --target aarch64-apple-darwin -- com.apple.Safari net.kovidgoyal.kitty
+```

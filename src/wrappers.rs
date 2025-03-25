@@ -12,14 +12,19 @@
 // You should have received a copy of the GNU General Public License along with
 // this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use std::ptr;
+use std::{borrow::Cow, ffi, ptr};
 
 use accessibility_sys::{
     AXUIElementCopyAttributeValue, AXUIElementCreateApplication,
-    AXUIElementRef, AXUIElementSetAttributeValue, AXValueRef, kAXErrorSuccess,
-    kAXPositionAttribute, kAXSizeAttribute, kAXWindowsAttribute,
+    AXUIElementGetPid, AXUIElementRef, AXUIElementSetAttributeValue,
+    AXValueRef, kAXPositionAttribute, kAXSizeAttribute, kAXWindowsAttribute,
+    pid_t,
 };
-use cocoa::{appkit::NSRunningApplication, base::id, foundation::NSArray};
+use cocoa::{
+    appkit::NSRunningApplication,
+    base::{id, nil},
+    foundation::{NSArray, NSString},
+};
 use core_foundation_sys::{
     base::{Boolean, kCFAllocatorNull},
     string::{
@@ -30,9 +35,9 @@ use core_graphics::display::{CFIndex, CFTypeRef};
 use snafu::ResultExt;
 
 use crate::{
-    UnnamedError,
+    AXErrorExt, BundleID, UnnamedError,
     layout::AXRect,
-    memory::{ManageWithRc, Rc, Unique},
+    memory::{CopyOnWrite, ManageWithRc, Rc, Unique},
 };
 
 #[derive(Clone, Copy)]
@@ -40,6 +45,26 @@ pub enum AccessibilityElementKey {
     Position,
     Size,
     Windows,
+}
+
+pub fn create_cfstring_from_static_str(
+    string: &'static str,
+) -> Result<Unique<CFStringRef>, UnnamedError> {
+    // SAFETY:
+    // - `kCFAllocatorNull` should be initialized by CoreFoundation.
+    // - The buffer contains no length or null byte
+    // - The string does not need deallocation
+    unsafe {
+        Unique::new_const(CFStringCreateWithBytesNoCopy(
+            ptr::null(),
+            string.as_ptr(),
+            string.len() as CFIndex,
+            kCFStringEncodingUTF8,
+            false as Boolean,
+            kCFAllocatorNull,
+        ))
+    }
+    .ok_or(UnnamedError::CouldNotCreateCFObject)
 }
 
 impl AccessibilityElementKey {
@@ -50,21 +75,7 @@ impl AccessibilityElementKey {
             AccessibilityElementKey::Windows => kAXWindowsAttribute,
         };
 
-        // SAFETY:
-        // - `kCFAllocatorNull` should be initialized by CoreFoundation.
-        // - The buffer contains no length or null byte
-        // - The string does not need deallocation
-        unsafe {
-            Unique::new_const(CFStringCreateWithBytesNoCopy(
-                ptr::null(),
-                string.as_ptr(),
-                string.len() as CFIndex,
-                kCFStringEncodingUTF8,
-                false as Boolean,
-                kCFAllocatorNull,
-            ))
-        }
-        .ok_or(UnnamedError::CouldNotCreateCFObject)
+        create_cfstring_from_static_str(string)
     }
 }
 
@@ -88,19 +99,14 @@ pub trait AccessibilityElement {
         )?;
 
         // SAFETY: todo
-        let error_code = unsafe {
+        unsafe {
             AXUIElementSetAttributeValue(
                 self.inner(),
                 key_cfstring.get(),
                 value as CFTypeRef,
             )
-        };
-
-        if error_code != kAXErrorSuccess {
-            return Err(UnnamedError::AXError { code: error_code });
         }
-
-        Ok(())
+        .into_result()
     }
 
     /// # Safety
@@ -117,39 +123,43 @@ pub trait AccessibilityElement {
         let mut result = ptr::null();
 
         // SAFETY: todo
-        let error_code = unsafe {
+        unsafe {
             AXUIElementCopyAttributeValue(
                 self.inner(),
                 key_cfstring.get(),
                 &mut result,
             )
-        };
-
-        if error_code != kAXErrorSuccess {
-            return Err(UnnamedError::AXError { code: error_code });
         }
+        .into_result()?;
 
         // SAFETY: todo
         unsafe { Rc::new_const(result) }.ok_or(UnnamedError::UnexpectedNull)
     }
 }
 
-pub struct App<'a>(Rc<AXUIElementRef>, &'a str);
+pub struct App<'a> {
+    inner: Rc<AXUIElementRef>,
+    pid: pid_t,
+    bundle_id: Cow<'a, str>,
+}
 
 impl AccessibilityElement for App<'_> {
     unsafe fn inner(&self) -> AXUIElementRef {
         // SAFETY: todo
-        unsafe { self.0.get() }
+        unsafe { self.inner.get() }
     }
 }
 
 impl<'a> App<'a> {
+    /// You can `bundle_id` and extra calls will be done to determine it from
+    /// the `app`.
+    ///
     /// # Safety
     ///
     /// `app` is an [`NSRunningApplication`].
     pub unsafe fn from_nsapp(
-        app: Rc<id>,
-        bundle_id: &'a str,
+        app: CopyOnWrite<id>,
+        bundle_id: impl Into<Option<&'a str>>,
     ) -> Result<Self, UnnamedError> {
         // SAFETY: `app` is an `Rc`.
         let pid = unsafe { app.get().processIdentifier() };
@@ -158,7 +168,39 @@ impl<'a> App<'a> {
         let inner = unsafe { Rc::new_mut(AXUIElementCreateApplication(pid)) }
             .ok_or(UnnamedError::CouldNotCreateCFObject)?;
 
-        Ok(Self(inner, bundle_id))
+        let bundle_id = if let Some(bundle_id) = bundle_id.into() {
+            bundle_id.into()
+        } else {
+            // TODO: doesn't this leak?
+            // SAFETY: todo
+            let bundle_id_nsstring =
+                unsafe { NSRunningApplication::bundleIdentifier(app.get()) };
+
+            if bundle_id_nsstring.is_null() {
+                return Err(UnnamedError::UnexpectedNull);
+            }
+
+            // SAFETY: todo
+            let bundle_id_cstr =
+                unsafe { NSString::UTF8String(bundle_id_nsstring) };
+
+            // SAFETY: tod
+            unsafe { ffi::CStr::from_ptr(bundle_id_cstr) }.to_string_lossy()
+        };
+
+        Ok(Self {
+            inner,
+            pid,
+            bundle_id,
+        })
+    }
+
+    pub fn pid(&self) -> pid_t {
+        self.pid
+    }
+
+    pub fn bundle_id(&self) -> &Cow<'a, str> {
+        &self.bundle_id
     }
 
     pub fn get_windows(&self) -> Result<Box<[Window]>, UnnamedError> {
@@ -183,37 +225,116 @@ impl<'a> App<'a> {
             }
             .ok_or(UnnamedError::UnexpectedNull)?;
 
+            //let mut pid = 0;
+            //// SAFETY: todo
+            //unsafe { AXUIElementGetPid(ax_window.get(), &mut pid) }
+            //    .into_result()
+            //    .whatever_context(format!(
+            //        "Could not get {} window PID",
+            //        self.bundle_id
+            //    ))?;
+
             // SAFETY: todo
-            ax_windows.push(Window(ax_window, self.1));
+            ax_windows.push(Window {
+                inner: CopyOnWrite::Owned(ax_window),
+                //pid,
+                bundle_id: self.bundle_id.to_string(),
+            });
         }
 
         Ok(ax_windows.into_boxed_slice())
     }
 }
 
-pub struct Window<'a>(Rc<AXUIElementRef>, &'a str);
+pub struct Window {
+    inner: CopyOnWrite<AXUIElementRef>,
+    //pid: pid_t,
+    bundle_id: String,
+}
 
-impl AccessibilityElement for Window<'_> {
+impl AccessibilityElement for Window {
     unsafe fn inner(&self) -> AXUIElementRef {
         // SAFETY: todo
-        unsafe { self.0.get() }
+        unsafe { self.inner.get() }
     }
 }
 
-impl Window<'_> {
-    pub fn resize(&mut self, frame: &AXRect) -> Result<(), UnnamedError> {
-        let bundle_id = self.1;
+impl Window {
+    /// # Safety
+    ///
+    /// `element` should be valid throughout the course of this function, and
+    /// the returned window should not outlive the `element`.
+    pub unsafe fn borrow_inner(
+        element: AXUIElementRef,
+    ) -> Result<Self, UnnamedError> {
+        // SAFETY: todo
+        if element.is_null() {
+            return Err(UnnamedError::UnexpectedNull);
+        }
 
+        let mut pid = 0;
+        // SAFETY: todo
+        unsafe { AXUIElementGetPid(element, &mut pid) }
+            .into_result()
+            .whatever_context("Could not get window PID")?;
+
+        // TODO: doesn't this leak?
+        // SAFETY: todo
+        let running_app = unsafe {
+            NSRunningApplication::runningApplicationWithProcessIdentifier(
+                nil, pid,
+            )
+        };
+        if running_app.is_null() {
+            return Err(UnnamedError::UnexpectedNull);
+        }
+
+        // TODO: doesn't this leak?
+        // SAFETY: todo
+        let bundle_id_nsstring =
+            unsafe { NSRunningApplication::bundleIdentifier(running_app) };
+
+        if bundle_id_nsstring.is_null() {
+            return Err(UnnamedError::UnexpectedNull);
+        }
+
+        // SAFETY: todo
+        let bundle_id_cstr =
+            unsafe { NSString::UTF8String(bundle_id_nsstring) };
+
+        // SAFETY: todo
+        let bundle_id = unsafe { ffi::CStr::from_ptr(bundle_id_cstr) }
+            .to_string_lossy()
+            .to_string();
+
+        Ok(Self {
+            inner: CopyOnWrite::Borrowed(element),
+            //pid,
+            bundle_id,
+        })
+    }
+
+    pub fn relayout(&mut self, frame: &AXRect) -> Result<(), UnnamedError> {
         // SAFETY: todo
         unsafe {
             self.set(AccessibilityElementKey::Position, frame.origin.get())
         }
-        .whatever_context(format!("Failed to set {bundle_id} position"))?;
+        .whatever_context(format!(
+            "Failed to set {} position",
+            self.bundle_id
+        ))?;
 
         // SAFETY: todo
         unsafe { self.set(AccessibilityElementKey::Size, frame.size.get()) }
-            .whatever_context(format!("Failed to set {bundle_id} size"))?;
+            .whatever_context(format!(
+                "Failed to set {} size",
+                self.bundle_id
+            ))?;
 
         Ok(())
+    }
+
+    pub fn bundle_id(&self) -> BundleID {
+        BundleID(&self.bundle_id)
     }
 }

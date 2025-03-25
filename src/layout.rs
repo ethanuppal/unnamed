@@ -34,6 +34,8 @@ const TOP_INSET: CGFloat = 6.0;
 const BOTTOM_INSET: CGFloat = 8.0;
 const INNER_SPACING: CGFloat = 12.0;
 
+#[derive(Clone, Copy)]
+#[repr(usize)]
 pub enum Layout {
     Full,
     Left,

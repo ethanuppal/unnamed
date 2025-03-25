@@ -13,157 +13,142 @@
 // this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use std::{
-    env,
-    error::Error,
+    collections::HashSet,
+    env, ffi,
     ptr::{self},
+    sync::LazyLock,
 };
 
 use accessibility_sys::{
-    AXError, AXIsProcessTrustedWithOptions, kAXTrustedCheckOptionPrompt,
+    AXObserverAddNotification, AXObserverCreate, AXObserverGetRunLoopSource,
+    AXObserverRef, AXUIElementRef, kAXWindowMovedNotification,
+    kAXWindowResizedNotification,
 };
-use cocoa::{
-    appkit::NSRunningApplication,
-    base::nil,
-    foundation::{NSArray, NSString},
-};
+use cocoa::{appkit::NSWorkspace, base::nil};
 use core_foundation_sys::{
-    base::CFTypeRef, dictionary::CFDictionaryCreate, number::kCFBooleanTrue,
+    runloop::{CFRunLoopAddSource, CFRunLoopGetCurrent, kCFRunLoopDefaultMode},
+    string::CFStringRef,
 };
-use layout::{Layout, get_layouts};
-use memory::{ManageWithRc, Rc};
-use snafu::{ResultExt, Snafu, whatever};
-use wrappers::App;
-
-pub mod layout;
-pub mod memory;
-pub mod wrappers;
-
-#[derive(Debug, Snafu)]
-pub enum UnnamedError {
-    #[snafu(display(
-        "Failed to create or copy object allocated with CoreFoundation"
-    ))]
-    CouldNotCreateCFObject,
-    #[snafu(display("Apple API object was unexpectedly null"))]
-    UnexpectedNull,
-    #[snafu(display("Accessibility API error: {code}"))]
-    AXError { code: AXError },
-    #[snafu(whatever, display("{message}"))]
-    Whatever {
-        message: String,
-        #[snafu(source(from(Box<dyn Error>, Some)))]
-        source: Option<Box<dyn Error>>,
+use dashmap::DashMap;
+use rdev::{EventType, Key};
+use snafu::{ResultExt, whatever};
+use unnamed::{
+    AXErrorExt, BundleID, UnnamedError, has_accessibility_permissions,
+    layout::{Layout, Layouts, get_layouts},
+    memory::{CopyOnWrite, Unique},
+    running_apps_with_bundle_id,
+    wrappers::{
+        AccessibilityElement, App, Window, create_cfstring_from_static_str,
     },
+};
+
+static LAYOUT_ASSIGNMENTS: LazyLock<DashMap<String, (Layout, bool)>> =
+    LazyLock::new(DashMap::new);
+
+unsafe extern "C" fn observer_callback(
+    _observer: AXObserverRef,
+    element: AXUIElementRef,
+    _notification: CFStringRef,
+    refcon: *mut ffi::c_void,
+) {
+    // SAFETY: todo
+    let layouts = unsafe { (refcon as *const _ as *const Layouts).as_ref() }
+        .expect("Got passed null?");
+    //println!("resize: {element:?} {_notification:?}");
+
+    //println!("tryign to print");
+    // SAFETY: todo
+    //println!("{}", unsafe { CFGetRetainCount(element as CFTypeRef) });
+
+    // SAFETY: todo
+    let mut window = unsafe { Window::borrow_inner(element) }
+        .expect("Window observer should be passed valid window");
+
+    let (layout, enabled) =
+        *LAYOUT_ASSIGNMENTS.get(window.bundle_id().as_ref()).unwrap();
+    if enabled {
+        window
+            .relayout(&layouts.rects[layout as usize])
+            .expect("Failed to relayout window");
+    }
 }
 
-/// Duplicated from
-/// https://developer.apple.com/documentation/bundleresources/information-property-list/cfbundleidentifier?language=objc:
-///
-/// > A _bundle ID_ uniquely identifies a single app throughout the system. The
-/// > bundle ID string must contain only alphanumeric characters (A–Z, a–z, and
-/// > 0–9), hyphens (-), and periods (.). Typically, you use a reverse-DNS
-/// > format for bundle ID strings. Bundle IDs are case-insensitive.
-#[derive(Clone, Copy)]
-pub struct BundleID<'a>(&'a str);
-
-#[derive(Debug, Snafu)]
-pub enum BundleIDParseError {
-    #[snafu(display("Invalid character '{c}' at index {index} in bundle ID"))]
-    InvalidCharacter { index: usize, c: char },
+#[derive(Default)]
+struct KeyState {
+    keys_down: HashSet<Key>,
 }
 
-impl<'a> TryFrom<&'a str> for BundleID<'a> {
-    type Error = BundleIDParseError;
+impl KeyState {
+    fn press(&mut self, key: Key) {
+        self.keys_down.insert(key);
+    }
 
-    fn try_from(value: &'a str) -> Result<Self, Self::Error> {
-        if let Some((problem_index, problem_char)) =
-            value.char_indices().find(|(_, c)| {
-                !(c.is_ascii_alphanumeric() || *c == '-' || *c == '.')
-            })
-        {
-            Err(BundleIDParseError::InvalidCharacter {
-                index: problem_index,
-                c: problem_char,
-            })
-        } else {
-            Ok(Self(value))
+    fn release(&mut self, key: &Key) {
+        self.keys_down.remove(key);
+    }
+
+    fn is_modifier_down(&self) -> bool {
+        let command = self.keys_down.contains(&Key::MetaLeft)
+            || self.keys_down.contains(&Key::MetaRight);
+        let control = self.keys_down.contains(&Key::ControlLeft)
+            || self.keys_down.contains(&Key::ControlRight);
+        let option = self.keys_down.contains(&Key::Alt)
+            || self.keys_down.contains(&Key::AltGr);
+        let shift = self.keys_down.contains(&Key::ShiftLeft)
+            || self.keys_down.contains(&Key::ShiftRight);
+        command && control && option && shift
+    }
+
+    fn is_modified(&self, key: Key) -> bool {
+        self.is_modifier_down() && self.keys_down.contains(&key)
+    }
+}
+
+fn update_layout_for_focused_window(
+    new_layout: Option<Layout>,
+    layouts: &Layouts,
+) -> Result<(), UnnamedError> {
+    // SAFETY: todo
+    let workspace = unsafe { NSWorkspace::sharedWorkspace(nil) };
+    if workspace.is_null() {
+        return Err(UnnamedError::UnexpectedNull);
+    }
+    //println!("test");
+
+    // SAFETY: todo
+    let app = unsafe { NSWorkspace::frontmostApplication(workspace) };
+    if app.is_null() {
+        return Err(UnnamedError::UnexpectedNull);
+    }
+
+    // SAFETY: todo
+    let app = unsafe { App::from_nsapp(CopyOnWrite::Borrowed(app), None) }?;
+
+    //println!("{}", app.bundle_id().as_ref());
+    if let Some(new_layout) = new_layout {
+        *LAYOUT_ASSIGNMENTS
+            .get_mut(app.bundle_id().as_ref())
+            .unwrap() = (new_layout, true);
+    } else {
+        LAYOUT_ASSIGNMENTS
+            .get_mut(app.bundle_id().as_ref())
+            .unwrap()
+            .1 ^= true;
+    }
+
+    for mut window in app.get_windows()? {
+        // TODO: code duplication
+        let (layout, enabled) =
+            *LAYOUT_ASSIGNMENTS.get(window.bundle_id().as_ref()).unwrap();
+        if enabled {
+            if let Err(error) = window.relayout(&layouts.rects[layout as usize])
+            {
+                eprintln!("error: {error}");
+            }
         }
     }
-}
 
-impl AsRef<str> for BundleID<'_> {
-    fn as_ref(&self) -> &str {
-        self.0
-    }
-}
-
-pub fn has_accessibility_permissions() -> Result<bool, UnnamedError> {
-    // SAFETY: `kAXTrustedCheckOptionPrompt` should be initialized by
-    // CoreFoundation.
-    let keys = [unsafe { kAXTrustedCheckOptionPrompt } as CFTypeRef];
-
-    // SAFETY: `kCFBooleanTrue` should be initialized by CoreFoundation.
-    let values = [unsafe { kCFBooleanTrue } as CFTypeRef];
-
-    // SAFETY:
-    // - `keys.as_ptr()` is a valid pointer to a C array of at least 1
-    //   pointer-sized value.
-    // - `values.as_ptr()` is likeunnamed.
-    let options = unsafe {
-        Rc::new_const(CFDictionaryCreate(
-            ptr::null(),
-            keys.as_ptr(),
-            values.as_ptr(),
-            1,
-            ptr::null(),
-            ptr::null(),
-        ))
-        .ok_or(UnnamedError::CouldNotCreateCFObject)
-    }?;
-
-    // SAFETY: `options` is a valid dictionary of options.
-    let is_trusted = unsafe { AXIsProcessTrustedWithOptions(options.get()) };
-
-    Ok(is_trusted)
-}
-
-pub fn running_apps_with_bundle_id(
-    bundle_id: BundleID,
-) -> Result<Box<[App<'_>]>, UnnamedError> {
-    let bundle_id_nsstring =
-    // SAFETY: &str to NSString.
-        unsafe { NSString::alloc(nil).init_str(bundle_id.0).into_rc() }
-            .ok_or(UnnamedError::CouldNotCreateCFObject)?;
-
-    // SAFETY: `bundle_id_nsstring` is nonnull.
-    let apps_nsarray = unsafe {
-        NSRunningApplication::runningApplicationsWithBundleIdentifier(
-            nil,
-            bundle_id_nsstring.get(),
-        )
-        .into_rc()
-    }
-    .ok_or(UnnamedError::UnexpectedNull)?;
-
-    // SAFETY: `runningApplicationsWithBundleIdentifier` returns an `NSArray`.
-    let count = unsafe { NSArray::count(apps_nsarray.get()) } as usize;
-
-    let mut running_apps = Vec::with_capacity(count);
-    for i in 0..count {
-        // SAFETY: `runningApplicationsWithBundleIdentifier` returns an
-        // `NSArray`. Each element is managed by the `NSArray`, so we use
-        // `as_rc`.
-        let running_app = unsafe {
-            NSArray::objectAtIndex(apps_nsarray.get(), i as u64).as_rc()
-        }
-        .ok_or(UnnamedError::UnexpectedNull)?;
-
-        running_apps
-            // SAFETY: todo
-            .push(unsafe { App::from_nsapp(running_app, bundle_id.0) }?);
-    }
-
-    Ok(running_apps.into_boxed_slice())
+    Ok(())
 }
 
 #[snafu::report]
@@ -205,13 +190,111 @@ fn main() -> Result<(), UnnamedError> {
     let layouts =
         get_layouts().whatever_context("Failed to compute layouts")?;
 
+    let mut observers = vec![];
+
     for bundle_id in bundle_ids {
+        LAYOUT_ASSIGNMENTS.insert(bundle_id.to_string(), (Layout::Full, true));
+
         for app in running_apps_with_bundle_id(bundle_id)? {
-            for mut window in app.get_windows()? {
-                window.resize(&layouts.rects[Layout::Full as usize])?;
+            let mut observer = ptr::null_mut();
+            // SAFETY: todo
+            unsafe {
+                AXObserverCreate(app.pid(), observer_callback, &mut observer)
             }
+            .into_result()?;
+            // SAFETY: todo
+            let observer = unsafe { Unique::new_mut(observer) }
+                .ok_or(UnnamedError::UnexpectedNull)?;
+
+            for mut window in app.get_windows()? {
+                window.relayout(&layouts.rects[Layout::Full as usize])?;
+
+                let notification = create_cfstring_from_static_str(
+                    kAXWindowResizedNotification,
+                )?;
+
+                // SAFETY: todo
+                unsafe {
+                    AXObserverAddNotification(
+                        observer.get(),
+                        window.inner(),
+                        notification.get(),
+                        &layouts as *const _ as *mut _,
+                    )
+                }
+                .into_result()
+                .whatever_context(format!(
+                    "Failed to observe window resizes in {bundle_id}"
+                ))?;
+
+                let notification = create_cfstring_from_static_str(
+                    kAXWindowMovedNotification,
+                )?;
+
+                // SAFETY: todo
+                unsafe {
+                    AXObserverAddNotification(
+                        observer.get(),
+                        window.inner(),
+                        notification.get(),
+                        &layouts as *const _ as *mut _,
+                    )
+                }
+                .into_result()
+                .whatever_context(format!(
+                    "Failed to observe window moves in {bundle_id}"
+                ))?;
+            }
+
+            // SAFETY: todo
+            let run_loop_source =
+                unsafe { AXObserverGetRunLoopSource(observer.get()) };
+            if run_loop_source.is_null() {
+                return Err(UnnamedError::UnexpectedNull);
+            }
+            // SAFETY: todo
+            unsafe {
+                CFRunLoopAddSource(
+                    CFRunLoopGetCurrent(),
+                    run_loop_source,
+                    kCFRunLoopDefaultMode,
+                )
+            };
+
+            observers.push(observer);
         }
     }
+
+    let mut key_state = KeyState::default();
+
+    // rdev automatically sets up the CGRunLoop
+    rdev::listen(move |event| match event.event_type {
+        EventType::KeyPress(key) => {
+            key_state.press(key);
+
+            if let Some(new_layout) = if key_state.is_modified(Key::KeyH) {
+                Some(Some(Layout::Left))
+            } else if key_state.is_modified(Key::KeyL) {
+                Some(Some(Layout::Right))
+            } else if key_state.is_modified(Key::KeyC) {
+                Some(Some(Layout::Full))
+            } else if key_state.is_modified(Key::Space) {
+                Some(None)
+            } else {
+                //if key_state.is_modified(Key::Space) { todo figure out toggle
+                None
+            } {
+                update_layout_for_focused_window(new_layout, &layouts)
+                    .expect("Failed to update window layouts");
+            }
+        }
+        EventType::KeyRelease(key) => {
+            key_state.release(&key);
+        }
+        _ => {}
+    })
+    .map_err(|inner| UnnamedError::RDevError { inner })
+    .whatever_context("CGRunLoop failed")?;
 
     Ok(())
 }

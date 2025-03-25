@@ -133,6 +133,7 @@ impl<Inner> Clone for Rc<*mut Inner> {
 // managed by CoreFoundation.
 impl<T> Drop for Rc<T> {
     fn drop(&mut self) {
+        //eprintln!("Pre drop {}", std::any::type_name::<Self>());
         // SAFETY: By the invariant, since we have a reference to a `Rc`, not
         // all `Rc`s referring to the pointer have been dropped, so by
         // the invariant this pointer is valid and we can call
@@ -140,7 +141,7 @@ impl<T> Drop for Rc<T> {
         unsafe {
             CFRelease(self.0);
         }
-        //eprintln!("Dropping {}", std::any::type_name::<T>());
+        //eprintln!("Post drop {}", std::any::type_name::<T>());
     }
 }
 
@@ -250,5 +251,41 @@ impl<Inner> Unique<*mut Inner> {
         // so by the invariant this pointer is valid. However, we leave
         // the user to responsibly use it from this call.
         unsafe { self.0.get() }
+    }
+}
+
+pub enum CopyOnWrite<T> {
+    Borrowed(T),
+    Owned(Rc<T>),
+}
+
+impl<Inner> CopyOnWrite<*mut Inner> {
+    /// # Safety
+    ///
+    /// See [`Rc::get`].
+    pub unsafe fn get(&self) -> *mut Inner {
+        match self {
+            Self::Borrowed(inner) => *inner,
+            // SAFETY: todo
+            Self::Owned(rc) => unsafe { rc.get() },
+        }
+    }
+}
+
+impl<Inner> Clone for CopyOnWrite<*mut Inner> {
+    fn clone(&self) -> Self {
+        match self {
+            Self::Borrowed(inner) => Self::Borrowed(*inner),
+            Self::Owned(rc) => Self::Owned(rc.clone()),
+        }
+    }
+}
+
+impl<T> Drop for CopyOnWrite<T> {
+    fn drop(&mut self) {
+        //eprintln!("Dropping {}", std::any::type_name::<Self>());
+        if matches!(self, Self::Borrowed(_)) {
+            //eprintln!("its borrowed");
+        }
     }
 }

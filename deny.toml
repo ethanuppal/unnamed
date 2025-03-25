@@ -10,14 +10,12 @@ targets = [
 all-features = true
 
 [bans]
-multiple-versions = "deny"
+multiple-versions = "warn"
 wildcards = "warn"
 
 allow = [
   { crate = "unnamed" },
-  { crate = "core-foundation-sys@0.8.7", reason = "provides low-level API to CoreFoundation" },
-  { crate = "accessibility-sys@0.2.0", reason = "provides low-level API to ApplicationServices accessibility" },
-
+  { crate = "accessibility-sys@0.2.0" },
   { crate = "snafu@0.8.5" },
   { crate = "snafu-derive@0.8.5" },
   { crate = "proc-macro2@1.0.94" },
@@ -26,19 +24,49 @@ allow = [
   { crate = "heck@0.5.0" },
   { crate = "unicode-ident@1.0.18" },
 
-  { crate = "cocoa@0.26.0", reason = "needed for macOS bindings" },
-  { crate = "cocoa-foundation@0.2.0", reason = "needed for macOS bindings" },
-  { crate = "core-foundation@0.10.0", reason = "needed for macOS Core Foundation support" },
-  { crate = "core-graphics@0.24.0", reason = "needed for macOS graphics API access" },
-  { crate = "core-graphics-types@0.2.0", reason = "needed for macOS graphics API access" },
-  { crate = "foreign-types@0.5.0", reason = "FFI support for macOS types" },
-  { crate = "foreign-types-shared@0.3.1", reason = "FFI support for macOS types" },
-  { crate = "foreign-types-macros@0.2.3", reason = "macros for foreign-types crate" },
-  { crate = "block@0.1.6", reason = "required for Obj-C block handling" },
-  { crate = "objc@0.2.7", reason = "required for Obj-C interop" },
-  { crate = "bitflags@2.9.0", reason = "provides flag types for system APIs" },
-  { crate = "libc@0.2.171", reason = "required for system FFI" },
-  { crate = "malloc_buf@0.0.6", reason = "required for Obj-C memory management" },
+  { crate = "cocoa@0.26.0" },
+  { crate = "cocoa@0.22.0" },
+  { crate = "cocoa-foundation@0.2.0" },
+  { crate = "core-foundation@0.10.0" },
+  { crate = "core-foundation@0.7.0" },
+  { crate = "core-foundation@0.9.4" },
+  { crate = "core-foundation-sys@0.8.7" },
+  { crate = "core-foundation-sys@0.7.0" },
+  { crate = "core-graphics@0.24.0" },
+  { crate = "core-graphics@0.19.2" },
+  { crate = "core-graphics@0.21.0" },
+  { crate = "core-graphics-types@0.2.0" },
+  { crate = "foreign-types@0.5.0" },
+  { crate = "foreign-types@0.3.2" },
+  { crate = "foreign-types-shared@0.3.1" },
+  { crate = "foreign-types-shared@0.1.1" },
+  { crate = "foreign-types-macros@0.2.3" },
+  { crate = "block@0.1.6" },
+  { crate = "objc@0.2.7" },
+  { crate = "bitflags@2.9.0" },
+  { crate = "bitflags@1.3.2" },
+  { crate = "libc@0.2.171" },
+  { crate = "malloc_buf@0.0.6" },
+
+  { crate = "autocfg@1.4.0" },
+  { crate = "cfg-if@1.0.0" },
+  { crate = "crossbeam-utils@0.8.21" },
+  { crate = "dashmap@6.1.0" },
+
+  { crate = "hashbrown@0.14.5" },
+  { crate = "lazy_static@1.5.0" },
+  { crate = "lock_api@0.4.12" },
+  { crate = "once_cell@1.21.1" },
+  { crate = "parking_lot_core@0.9.10" },
+  { crate = "pkg-config@0.3.32" },
+  { crate = "rdev@0.5.3" },
+  { crate = "scopeguard@1.2.0" },
+  { crate = "smallvec@1.14.0" },
+  { crate = "winapi@0.3.9" },
+  { crate = "windows-targets@0.52.6" },
+  { crate = "windows_x86_64_gnu@0.52.6" },
+  { crate = "windows_x86_64_msvc@0.52.6" },
+  { crate = "x11@2.21.0" },
 ]
 
 [sources]
@@ -46,7 +74,6 @@ unknown-registry = "deny"
 unknown-git = "deny"
 required-git-spec = "rev"
 allow-git = ["https://github.com/ethanuppal/core-foundation-rs"]
-
 
 [licenses]
 allow = ["MIT", "Apache-2.0", "Unicode-3.0", "GPL-3.0"]
