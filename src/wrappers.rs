@@ -16,27 +16,23 @@ use std::ptr;
 
 use accessibility_sys::{
     AXUIElementCopyAttributeValue, AXUIElementCreateApplication,
-    AXUIElementRef, AXUIElementSetAttributeValue, AXValueCreate,
-    kAXErrorSuccess, kAXPositionAttribute, kAXSizeAttribute,
-    kAXValueTypeCGPoint, kAXValueTypeCGSize, kAXWindowsAttribute,
+    AXUIElementRef, AXUIElementSetAttributeValue, AXValueRef, kAXErrorSuccess,
+    kAXPositionAttribute, kAXSizeAttribute, kAXWindowsAttribute,
 };
-use cocoa::{
-    appkit::{CGPoint, NSRunningApplication},
-    base::id,
-    foundation::NSArray,
-};
+use cocoa::{appkit::NSRunningApplication, base::id, foundation::NSArray};
 use core_foundation_sys::{
     base::{Boolean, kCFAllocatorNull},
     string::{
         CFStringCreateWithBytesNoCopy, CFStringRef, kCFStringEncodingUTF8,
     },
 };
-use core_graphics::display::{CFIndex, CFTypeRef, CGRect, CGSize};
+use core_graphics::display::{CFIndex, CFTypeRef};
 use snafu::ResultExt;
 
 use crate::{
     UnnamedError,
-    memory::{ManageWithRc, Rc},
+    layout::AXRect,
+    memory::{ManageWithRc, Rc, Unique},
 };
 
 #[derive(Clone, Copy)]
@@ -47,7 +43,7 @@ pub enum AccessibilityElementKey {
 }
 
 impl AccessibilityElementKey {
-    fn as_cfstring(&self) -> Result<Rc<CFStringRef>, UnnamedError> {
+    fn as_cfstring(&self) -> Result<Unique<CFStringRef>, UnnamedError> {
         let string = match self {
             AccessibilityElementKey::Position => kAXPositionAttribute,
             AccessibilityElementKey::Size => kAXSizeAttribute,
@@ -59,7 +55,7 @@ impl AccessibilityElementKey {
         // - The buffer contains no length or null byte
         // - The string does not need deallocation
         unsafe {
-            Rc::new_const(CFStringCreateWithBytesNoCopy(
+            Unique::new_const(CFStringCreateWithBytesNoCopy(
                 ptr::null(),
                 string.as_ptr(),
                 string.len() as CFIndex,
@@ -85,7 +81,7 @@ pub trait AccessibilityElement {
     unsafe fn set(
         &mut self,
         key: AccessibilityElementKey,
-        value: CFTypeRef,
+        value: AXValueRef,
     ) -> Result<(), UnnamedError> {
         let key_cfstring = key.as_cfstring().whatever_context(
             "Failed to construct CFString from accessibility key",
@@ -96,7 +92,7 @@ pub trait AccessibilityElement {
             AXUIElementSetAttributeValue(
                 self.inner(),
                 key_cfstring.get(),
-                value,
+                value as CFTypeRef,
             )
         };
 
@@ -205,43 +201,18 @@ impl AccessibilityElement for Window<'_> {
 }
 
 impl Window<'_> {
-    pub fn resize(&mut self, frame: CGRect) -> Result<(), UnnamedError> {
+    pub fn resize(&mut self, frame: &AXRect) -> Result<(), UnnamedError> {
         let bundle_id = self.1;
-
-        // SAFETY: ``&frame.origin` is a valid pointer and not mutably
-        // referenced throughout the course of this function.
-        let ax_origin = unsafe {
-            Rc::new_const(AXValueCreate(
-                kAXValueTypeCGPoint,
-                &frame.origin as *const CGPoint as *const _,
-            ))
-        }
-        .ok_or(UnnamedError::CouldNotCreateCFObject)?;
 
         // SAFETY: todo
         unsafe {
-            self.set(
-                AccessibilityElementKey::Position,
-                ax_origin.get() as CFTypeRef,
-            )
+            self.set(AccessibilityElementKey::Position, frame.origin.get())
         }
         .whatever_context(format!("Failed to set {bundle_id} position"))?;
 
-        // SAFETY: ``&frame.size`` is a valid pointer and not mutably referenced
-        // throughout the course of this function.
-        let ax_size = unsafe {
-            Rc::new_const(AXValueCreate(
-                kAXValueTypeCGSize,
-                &frame.size as *const CGSize as *const _,
-            ))
-        }
-        .ok_or(UnnamedError::CouldNotCreateCFObject)?;
-
         // SAFETY: todo
-        unsafe {
-            self.set(AccessibilityElementKey::Size, ax_size.get() as CFTypeRef)
-        }
-        .whatever_context(format!("Failed to set {bundle_id} size"))?;
+        unsafe { self.set(AccessibilityElementKey::Size, frame.size.get()) }
+            .whatever_context(format!("Failed to set {bundle_id} size"))?;
 
         Ok(())
     }

@@ -212,3 +212,59 @@ impl<Inner> ManageWithRc for *mut Inner {
         Some(rc)
     }
 }
+
+pub struct Unique<T>(Rc<T>);
+
+impl<Inner> Unique<*const Inner> {
+    /// Returns `None` if the given pointer is null.
+    ///
+    /// # Safety
+    ///
+    /// `pointer` is a valid Apple API object with a nonzero retain count. If it
+    /// has a single retain count (e.g., it was just created) and all
+    /// further access to this object is done through `Box` (using `Box::get`
+    /// etc. in the documented manner), this object is safe to use.
+    pub unsafe fn new_const(pointer: *const Inner) -> Option<Self> {
+        // SAFETY: todo
+        Some(Self(unsafe { Rc::new_const(pointer) }?))
+    }
+
+    /// # Safety
+    ///
+    /// You must ensure the returned pointer lives no longer than any `Box`
+    /// whence it comes.
+    pub unsafe fn get(&self) -> *const Inner {
+        // SAFETY: By the invariant, since we have a reference to a `Box`, not
+        // all `Box`s referring to the pointer have been dropped, so by
+        // the invariant this pointer is valid. However, we leave the
+        // user to responsibly use it from this call.
+        unsafe { self.0.get() }
+    }
+}
+
+impl<Inner> Unique<*mut Inner> {
+    /// Returns `None` if the given pointer is null.
+    ///
+    /// # Safety
+    ///
+    /// `pointer` is a valid Apple API object with a nonzero retain count. If it
+    /// has a single retain count (e.g., it was just created) and all
+    /// further access to this object is done through `Box` (using `Box::get`
+    /// etc. in the documented manner), this object is safe to use.
+    pub unsafe fn new_mut(pointer: *mut Inner) -> Option<Self> {
+        // SAFETY: todo
+        Some(Self(unsafe { Rc::new_mut(pointer) }?))
+    }
+
+    /// # Safety
+    ///
+    /// You must ensure the returned pointer lives no longer than any `Box`
+    /// whence it comes.
+    pub unsafe fn get(&self) -> *mut Inner {
+        // SAFETY: By the invariant, since we have a reference to a `Box`, not
+        // all `Box`s referring to the pointer have been dropped, so by
+        // the invariant this pointer is valid. However, we leave the
+        // user to responsibly use it from this call.
+        unsafe { self.0.get() }
+    }
+}

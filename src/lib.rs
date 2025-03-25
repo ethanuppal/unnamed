@@ -21,18 +21,18 @@ use accessibility_sys::{
     AXError, AXIsProcessTrustedWithOptions, kAXTrustedCheckOptionPrompt,
 };
 use cocoa::{
-    appkit::{CGFloat, CGPoint, NSRunningApplication, NSScreen},
+    appkit::NSRunningApplication,
     base::nil,
     foundation::{NSArray, NSString},
 };
 use core_foundation_sys::{
     base::CFTypeRef, dictionary::CFDictionaryCreate, number::kCFBooleanTrue,
 };
-use core_graphics::display::{CGRect, CGSize};
 use memory::{ManageWithRc, Rc};
 use snafu::Snafu;
 use wrappers::App;
 
+pub mod layout;
 pub mod memory;
 pub mod wrappers;
 
@@ -61,6 +61,7 @@ pub enum UnnamedError {
 /// > bundle ID string must contain only alphanumeric characters (A–Z, a–z, and
 /// > 0–9), hyphens (-), and periods (.). Typically, you use a reverse-DNS
 /// > format for bundle ID strings. Bundle IDs are case-insensitive.
+#[derive(Clone, Copy)]
 pub struct BundleID<'a>(&'a str);
 
 #[derive(Debug, Snafu)]
@@ -85,6 +86,12 @@ impl<'a> TryFrom<&'a str> for BundleID<'a> {
         } else {
             Ok(Self(value))
         }
+    }
+}
+
+impl AsRef<str> for BundleID<'_> {
+    fn as_ref(&self) -> &str {
+        self.0
     }
 }
 
@@ -155,19 +162,4 @@ pub fn running_apps_with_bundle_id(
     }
 
     Ok(running_apps.into_boxed_slice())
-}
-
-pub fn get_screen_frame() -> CGRect {
-    // SAFETY: todo
-    let main_screen = unsafe { NSScreen::mainScreen(nil) };
-
-    // SAFETY: todo
-    let frame = unsafe { main_screen.frame() };
-
-    const NOTCH_HEIGHT: CGFloat = 40.0;
-
-    CGRect {
-        origin: CGPoint::new(frame.origin.x, frame.origin.y + NOTCH_HEIGHT),
-        size: CGSize::new(frame.size.width, frame.size.height - NOTCH_HEIGHT),
-    }
 }

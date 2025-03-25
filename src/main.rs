@@ -14,17 +14,12 @@
 
 use std::env;
 
-use cocoa::appkit::CGFloat;
 use snafu::{ResultExt, whatever};
 use unnamed::{
-    BundleID, UnnamedError, get_screen_frame, has_accessibility_permissions,
+    BundleID, UnnamedError, has_accessibility_permissions,
+    layout::{Layout, get_layouts},
     running_apps_with_bundle_id,
 };
-
-const LEFT_INSET: CGFloat = 8.0;
-const RIGHT_INSET: CGFloat = 8.0;
-const TOP_INSET: CGFloat = 6.0;
-const BOTTOM_INSET: CGFloat = 8.0;
 
 #[snafu::report]
 fn main() -> Result<(), UnnamedError> {
@@ -62,17 +57,13 @@ fn main() -> Result<(), UnnamedError> {
         whatever!("This program needs accessibility permissions to work");
     }
 
-    let mut frame = get_screen_frame();
-
-    frame.origin.x += LEFT_INSET;
-    frame.origin.y += TOP_INSET;
-    frame.size.width -= LEFT_INSET + RIGHT_INSET;
-    frame.size.height -= TOP_INSET + BOTTOM_INSET;
+    let layouts =
+        get_layouts().whatever_context("Failed to compute layouts")?;
 
     for bundle_id in bundle_ids {
         for app in running_apps_with_bundle_id(bundle_id)? {
             for mut window in app.get_windows()? {
-                window.resize(frame)?;
+                window.resize(&layouts.rects[Layout::Full as usize])?;
             }
         }
     }

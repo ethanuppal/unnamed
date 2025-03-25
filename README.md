@@ -4,7 +4,17 @@
 > The name, in addition to the code, is a work-in-progress!
 
 This is currently just for me because I want to automatically pin apps to have specific border insets.
-Thus, the border insets are not configurable -- they will always be 8, 8, 6, 8 beecause those look best on my system.
+Thus, the border insets are not configurable -- they will always be
+
+```rs
+const LEFT_INSET: CGFloat = 8.0;
+const RIGHT_INSET: CGFloat = 8.0;
+const TOP_INSET: CGFloat = 6.0;
+const BOTTOM_INSET: CGFloat = 8.0;
+const INNER_SPACING: CGFloat = 12.0;
+```
+
+because those look best on my system.
 **It's also probably very buggy.**
 
 ## Usage
@@ -35,7 +45,7 @@ You will need to give `target/release/unnamed` accessibility permissions.
 
 ## Layouts
 
-I plan to support three layout options:
+Three layout options are supported:
 
 - full screen
 - left

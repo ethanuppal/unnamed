@@ -16,7 +16,7 @@ wildcards = "warn"
 allow = [
   { crate = "unnamed" },
   { crate = "core-foundation-sys@0.8.7", reason = "provides low-level API to CoreFoundation" },
-  { crate = "accessibility-sys@0.1.3", reason = "provides low-level API to ApplicationServices accessibility" },
+  { crate = "accessibility-sys@0.2.0", reason = "provides low-level API to ApplicationServices accessibility" },
 
   { crate = "snafu@0.8.5" },
   { crate = "snafu-derive@0.8.5" },
