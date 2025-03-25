@@ -29,7 +29,7 @@ cd unnamed
 Then, run:
 
 ```shell
-cargo run --release -- <bundle ids>
+cargo run --release -- <bundle IDs>
 ```
 
 For example:
