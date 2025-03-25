@@ -12,24 +12,6 @@
 // You should have received a copy of the GNU General Public License along with
 // this program.  If not, see <https://www.gnu.org/licenses/>.
 
-//pub struct Manual(pub id);
-//
-//impl Manual {
-//    pub unsafe fn retain(&mut self) {
-//        // SAFETY: responsibility of the user
-//        unsafe {
-//            CFRetain(self.0 as CFTypeRef);
-//        }
-//    }
-//
-//    pub unsafe fn release(&mut self) {
-//        // SAFETY: responsibility of the user
-//        unsafe {
-//            CFRelease(self.0 as CFTypeRef);
-//        }
-//    }
-//}
-
 use std::{marker::PhantomData, ptr::NonNull};
 
 use core_foundation_sys::base::{
