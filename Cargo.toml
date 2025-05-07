@@ -12,6 +12,7 @@ core-graphics = { git = "https://github.com/ethanuppal/core-foundation-rs", rev 
 snafu = { version = "0.8.5", default-features = false, features = ["std"] }
 dashmap = { version = "6.1.0", default-features = false }
 rdev = { version = "0.5.3", default-features = false }
+argh = { version = "0.1.13", default-features = false }
 
 [patch.crates-io]
 core-foundation-sys = { git = "https://github.com/ethanuppal/core-foundation-rs", rev = "8a5832d955da568962ad817cefbff52fb21cdc11" }

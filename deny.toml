@@ -67,6 +67,11 @@ allow = [
   { crate = "windows_x86_64_gnu@0.52.6" },
   { crate = "windows_x86_64_msvc@0.52.6" },
   { crate = "x11@2.21.0" },
+
+  { crate = "argh@0.1.13" },
+  { crate = "argh_derive@0.1.13" },
+  { crate = "argh_shared@0.1.13" },
+  { crate = "rust-fuzzy-search@0.1.1" },
 ]
 
 [sources]
@@ -76,5 +81,5 @@ required-git-spec = "rev"
 allow-git = ["https://github.com/ethanuppal/core-foundation-rs"]
 
 [licenses]
-allow = ["MIT", "Apache-2.0", "Unicode-3.0", "GPL-3.0"]
+allow = ["MIT", "Apache-2.0", "Unicode-3.0", "BSD-3-Clause", "GPL-3.0"]
 confidence-threshold = 1.0

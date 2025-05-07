@@ -14,7 +14,8 @@
 
 use std::{
     collections::HashSet,
-    env, ffi,
+    ffi, fs,
+    path::PathBuf,
     ptr::{self},
     sync::LazyLock,
 };
@@ -24,6 +25,7 @@ use accessibility_sys::{
     AXObserverRef, AXUIElementRef, kAXWindowMovedNotification,
     kAXWindowResizedNotification,
 };
+use argh::FromArgs;
 use cocoa::{appkit::NSWorkspace, base::nil};
 use core_foundation_sys::{
     runloop::{CFRunLoopAddSource, CFRunLoopGetCurrent, kCFRunLoopDefaultMode},
@@ -113,7 +115,6 @@ fn update_layout_for_focused_window(
     if workspace.is_null() {
         return Err(UnnamedError::UnexpectedNull);
     }
-    //println!("test");
 
     // SAFETY: todo
     let app = unsafe { NSWorkspace::frontmostApplication(workspace) };
@@ -124,15 +125,21 @@ fn update_layout_for_focused_window(
     // SAFETY: todo
     let app = unsafe { App::from_nsapp(CopyOnWrite::Borrowed(app), None) }?;
 
+    if !LAYOUT_ASSIGNMENTS.contains_key(app.bundle_id().as_ref()) {
+        LAYOUT_ASSIGNMENTS
+            .insert(app.bundle_id().to_string(), (Layout::Full, false));
+    }
+
     //println!("{}", app.bundle_id().as_ref());
     if let Some(new_layout) = new_layout {
         *LAYOUT_ASSIGNMENTS
             .get_mut(app.bundle_id().as_ref())
-            .unwrap() = (new_layout, true);
+            .expect("We just initialized it if it didn't exist") =
+            (new_layout, true);
     } else {
         LAYOUT_ASSIGNMENTS
             .get_mut(app.bundle_id().as_ref())
-            .unwrap()
+            .expect("We just initialized it if it didn't exist")
             .1 ^= true;
     }
 
@@ -151,37 +158,32 @@ fn update_layout_for_focused_window(
     Ok(())
 }
 
+/// Ethan's custom macOS window layout engine.
+#[derive(FromArgs)]
+struct Args {
+    /// file containing on each line a bundle ID, a comment starting wtih `#`,
+    /// or whitespace.
+    #[argh(positional)]
+    bundle_id_list_file: PathBuf,
+}
+
 #[snafu::report]
 fn main() -> Result<(), UnnamedError> {
-    let args = env::args().collect::<Vec<_>>();
-    let args = args
-        .iter()
-        .map(|string| string.as_str())
-        .collect::<Vec<_>>();
+    let args: Args = argh::from_env();
 
-    let bundle_ids = match (args.as_slice(), args.len()) {
-        (&[_, "--help"], 2) => {
-            println!(
-                "usage: {} <bundle IDs> | {0} --help | {0} --version",
-                args[0]
-            );
-            return Ok(());
-        }
-        (&[_, "--version"], 2) => {
-            println!("{} {}", args[0], env!("CARGO_PKG_VERSION"));
-            return Ok(());
-        }
-        (other, args) if args > 1 => other
-            .iter()
-            .skip(1)
-            .cloned()
-            .map(BundleID::try_from)
-            .collect::<Result<Vec<_>, _>>()
-            .whatever_context("Failed to parse provided bundle IDs")?,
-        _ => {
-            whatever!("Invalid arguments. Pass --help for usage information.");
-        }
-    };
+    let file_contents = fs::read_to_string(&args.bundle_id_list_file)
+        .whatever_context(format!(
+            "Failed to read {} as a string",
+            args.bundle_id_list_file.display()
+        ))?;
+    let bundle_ids: Vec<BundleID> = file_contents
+        .lines()
+        .filter(|line| {
+            !(line.starts_with("#") || line.chars().all(|c| c.is_whitespace()))
+        })
+        .map(BundleID::try_from)
+        .collect::<Result<Vec<_>, _>>()
+        .whatever_context("Failed to parse all given bundle IDs")?;
 
     if !has_accessibility_permissions()? {
         whatever!("This program needs accessibility permissions to work");

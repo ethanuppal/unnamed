@@ -1,0 +1,17 @@
+com.apple.Safari
+
+net.kovidgoyal.kitty
+md.obsidian
+
+app.legcord.Legcord
+
+com.apple.mail
+
+com.apple.Music
+org.musescore.MuseScore
+
+com.tinyspeck.slackmacgap
+
+com.deepnight.ldtk
+com.ethan.AsepriteWrapper
+org.mapeditor.Tiled
