@@ -15,8 +15,8 @@
 use std::{error::Error, fmt, ptr};
 
 use accessibility_sys::{
-    AXError, AXIsProcessTrustedWithOptions, kAXErrorSuccess,
-    kAXTrustedCheckOptionPrompt,
+    kAXErrorSuccess, kAXTrustedCheckOptionPrompt, AXError,
+    AXIsProcessTrustedWithOptions,
 };
 use cocoa::{
     appkit::NSRunningApplication,
@@ -32,6 +32,7 @@ use snafu::Snafu;
 use wrappers::App;
 
 pub mod layout;
+pub mod magic;
 pub mod memory;
 pub mod wrappers;
 

@@ -13,7 +13,7 @@
 // this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     ffi, fs,
     path::PathBuf,
     ptr::{self},
@@ -36,16 +36,24 @@ use rdev::{EventType, Key};
 use snafu::{ResultExt, whatever};
 use unnamed::{
     AXErrorExt, BundleID, UnnamedError, has_accessibility_permissions,
-    layout::{Layout, Layouts, get_layouts},
+    layout::{LayoutPreset, LayoutPresets, get_layout_presets},
     memory::{CopyOnWrite, Unique},
     running_apps_with_bundle_id,
     wrappers::{
-        AccessibilityElement, App, Window, create_cfstring_from_static_str,
+        AccessibilityElement, App, Window, WindowMagicId,
+        create_cfstring_from_static_str,
     },
 };
 
-static LAYOUT_ASSIGNMENTS: LazyLock<DashMap<String, (Layout, bool)>> =
-    LazyLock::new(DashMap::new);
+#[derive(Default, Clone, Copy)]
+pub struct WindowLayoutAssignment {
+    preset: LayoutPreset,
+    enabled: bool,
+}
+
+static LAYOUT_ASSIGNMENTS: LazyLock<
+    DashMap<String, HashMap<WindowMagicId, WindowLayoutAssignment>>,
+> = LazyLock::new(DashMap::new);
 
 unsafe extern "C" fn observer_callback(
     _observer: AXObserverRef,
@@ -54,8 +62,9 @@ unsafe extern "C" fn observer_callback(
     refcon: *mut ffi::c_void,
 ) {
     // SAFETY: todo
-    let layouts = unsafe { (refcon as *const _ as *const Layouts).as_ref() }
-        .expect("Got passed null?");
+    let layout_presets =
+        unsafe { (refcon as *const _ as *const LayoutPresets).as_ref() }
+            .expect("Got passed null?");
     //println!("resize: {element:?} {_notification:?}");
 
     //println!("tryign to print");
@@ -66,11 +75,22 @@ unsafe extern "C" fn observer_callback(
     let mut window = unsafe { Window::borrow_inner(element) }
         .expect("Window observer should be passed valid window");
 
-    let (layout, enabled) =
-        *LAYOUT_ASSIGNMENTS.get(window.bundle_id().as_ref()).unwrap();
+    let window_magic_id = match window.magic_id() {
+        Ok(id) => id,
+        Err(error) => {
+            eprintln!("Failed to get window magic ID: {error}");
+            return;
+        }
+    };
+
+    let WindowLayoutAssignment { preset, enabled } = *LAYOUT_ASSIGNMENTS
+        .get_mut(window.bundle_id().as_ref())
+        .unwrap()
+        .entry(window_magic_id)
+        .or_default();
     if enabled {
         window
-            .relayout(&layouts.rects[layout as usize])
+            .relayout(&layout_presets.rects[preset as usize])
             .expect("Failed to relayout window");
     }
 }
@@ -107,48 +127,75 @@ impl KeyState {
 }
 
 fn update_layout_for_focused_window(
-    new_layout: Option<Layout>,
-    layouts: &Layouts,
+    new_layout_preset: Option<LayoutPreset>,
+    layout_presets: &LayoutPresets,
 ) -> Result<(), UnnamedError> {
-    // SAFETY: todo
+    // SAFETY: A method on the `NSWorkspace` class should work when linked with
+    // the macOS frameworks.
     let workspace = unsafe { NSWorkspace::sharedWorkspace(nil) };
     if workspace.is_null() {
         return Err(UnnamedError::UnexpectedNull);
     }
 
-    // SAFETY: todo
+    // SAFETY: `workspace` is non-null.
     let app = unsafe { NSWorkspace::frontmostApplication(workspace) };
     if app.is_null() {
         return Err(UnnamedError::UnexpectedNull);
     }
 
-    // SAFETY: todo
+    // SAFETY: `app` is an `NSRunningAppplication` in accordance with the type
+    // signature of `frontmostApplication`.
     let app = unsafe { App::from_nsapp(CopyOnWrite::Borrowed(app), None) }?;
 
     if !LAYOUT_ASSIGNMENTS.contains_key(app.bundle_id().as_ref()) {
-        LAYOUT_ASSIGNMENTS
-            .insert(app.bundle_id().to_string(), (Layout::Full, false));
+        LAYOUT_ASSIGNMENTS.insert(app.bundle_id().to_string(), HashMap::new());
     }
 
-    //println!("{}", app.bundle_id().as_ref());
-    if let Some(new_layout) = new_layout {
-        *LAYOUT_ASSIGNMENTS
+    let Some(focused_window) = app
+        .focused_window()
+        .whatever_context("Failed to get optionally focused window for app")?
+    else {
+        eprintln!("Focused app without focused window, so Finder??");
+        return Ok(());
+    };
+    let focused_window_magic_id = focused_window
+        .magic_id()
+        .whatever_context("Failed to get magic ID of focused window")?;
+
+    if let Some(new_layout_preset) = new_layout_preset {
+        LAYOUT_ASSIGNMENTS
             .get_mut(app.bundle_id().as_ref())
-            .expect("We just initialized it if it didn't exist") =
-            (new_layout, true);
+            .expect("We just initialized it if it didn't exist")
+            .insert(
+                focused_window_magic_id,
+                WindowLayoutAssignment {
+                    preset: new_layout_preset,
+                    enabled: true,
+                },
+            );
     } else {
         LAYOUT_ASSIGNMENTS
             .get_mut(app.bundle_id().as_ref())
             .expect("We just initialized it if it didn't exist")
-            .1 ^= true;
+            .entry(focused_window_magic_id)
+            .or_default()
+            .enabled ^= true;
     }
 
     for mut window in app.get_windows()? {
         // TODO: code duplication
-        let (layout, enabled) =
-            *LAYOUT_ASSIGNMENTS.get(window.bundle_id().as_ref()).unwrap();
+        let WindowLayoutAssignment { preset, enabled } = *LAYOUT_ASSIGNMENTS
+            .get_mut(window.bundle_id().as_ref())
+            .unwrap()
+            .entry(
+                window
+                    .magic_id()
+                    .whatever_context("Failed to get window magic ID")?,
+            )
+            .or_default();
         if enabled {
-            if let Err(error) = window.relayout(&layouts.rects[layout as usize])
+            if let Err(error) =
+                window.relayout(&layout_presets.rects[preset as usize])
             {
                 eprintln!("error: {error}");
             }
@@ -189,13 +236,13 @@ fn main() -> Result<(), UnnamedError> {
         whatever!("This program needs accessibility permissions to work");
     }
 
-    let layouts =
-        get_layouts().whatever_context("Failed to compute layouts")?;
+    let layout_presets = get_layout_presets()
+        .whatever_context("Failed to compute layout presets")?;
 
     let mut observers = vec![];
 
     for bundle_id in bundle_ids {
-        LAYOUT_ASSIGNMENTS.insert(bundle_id.to_string(), (Layout::Full, true));
+        LAYOUT_ASSIGNMENTS.insert(bundle_id.to_string(), HashMap::new());
 
         for app in running_apps_with_bundle_id(bundle_id)? {
             let mut observer = ptr::null_mut();
@@ -209,7 +256,9 @@ fn main() -> Result<(), UnnamedError> {
                 .ok_or(UnnamedError::UnexpectedNull)?;
 
             for mut window in app.get_windows()? {
-                window.relayout(&layouts.rects[Layout::Full as usize])?;
+                window.relayout(
+                    &layout_presets.rects[LayoutPreset::Full as usize],
+                )?;
 
                 let notification = create_cfstring_from_static_str(
                     kAXWindowResizedNotification,
@@ -221,7 +270,7 @@ fn main() -> Result<(), UnnamedError> {
                         observer.get(),
                         window.inner(),
                         notification.get(),
-                        &layouts as *const _ as *mut _,
+                        &layout_presets as *const _ as *mut _,
                     )
                 }
                 .into_result()
@@ -239,7 +288,7 @@ fn main() -> Result<(), UnnamedError> {
                         observer.get(),
                         window.inner(),
                         notification.get(),
-                        &layouts as *const _ as *mut _,
+                        &layout_presets as *const _ as *mut _,
                     )
                 }
                 .into_result()
@@ -274,20 +323,24 @@ fn main() -> Result<(), UnnamedError> {
         EventType::KeyPress(key) => {
             key_state.press(key);
 
-            if let Some(new_layout) = if key_state.is_modified(Key::KeyH) {
-                Some(Some(Layout::Left))
+            if let Some(new_layout_preset) = if key_state.is_modified(Key::KeyH)
+            {
+                Some(Some(LayoutPreset::Left))
             } else if key_state.is_modified(Key::KeyL) {
-                Some(Some(Layout::Right))
+                Some(Some(LayoutPreset::Right))
             } else if key_state.is_modified(Key::KeyC) {
-                Some(Some(Layout::Full))
+                Some(Some(LayoutPreset::Full))
             } else if key_state.is_modified(Key::Space) {
                 Some(None)
             } else {
                 //if key_state.is_modified(Key::Space) { todo figure out toggle
                 None
             } {
-                update_layout_for_focused_window(new_layout, &layouts)
-                    .expect("Failed to update window layouts");
+                update_layout_for_focused_window(
+                    new_layout_preset,
+                    &layout_presets,
+                )
+                .expect("Failed to update window layouts");
             }
         }
         EventType::KeyRelease(key) => {

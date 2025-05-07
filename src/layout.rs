@@ -36,7 +36,7 @@ const INNER_SPACING: CGFloat = 12.0;
 
 #[derive(Default, Clone, Copy)]
 #[repr(usize)]
-pub enum Layout {
+pub enum LayoutPreset {
     #[default]
     Full,
     Left,
@@ -44,8 +44,8 @@ pub enum Layout {
     COUNT,
 }
 
-pub struct Layouts {
-    pub rects: [AXRect; Layout::COUNT as usize],
+pub struct LayoutPresets {
+    pub rects: [AXRect; LayoutPreset::COUNT as usize],
 }
 
 fn create_ax_rect(frame: CGRect) -> Result<AXRect, UnnamedError> {
@@ -104,7 +104,7 @@ fn inset(
     rect
 }
 
-pub fn get_layouts() -> Result<Layouts, UnnamedError> {
+pub fn get_layout_presets() -> Result<LayoutPresets, UnnamedError> {
     // SAFETY: todo
     let main_screen = unsafe { NSScreen::mainScreen(nil) };
 
@@ -128,7 +128,7 @@ pub fn get_layouts() -> Result<Layouts, UnnamedError> {
 
     let (left_frame, right_frame) = split_horizontal(frame);
 
-    Ok(Layouts {
+    Ok(LayoutPresets {
         rects: [
             create_ax_rect(inset(
                 frame,

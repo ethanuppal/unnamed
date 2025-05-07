@@ -17,8 +17,8 @@ use std::{borrow::Cow, ffi, ptr};
 use accessibility_sys::{
     AXUIElementCopyAttributeValue, AXUIElementCreateApplication,
     AXUIElementGetPid, AXUIElementRef, AXUIElementSetAttributeValue,
-    AXValueRef, kAXPositionAttribute, kAXSizeAttribute, kAXWindowsAttribute,
-    pid_t,
+    AXValueRef, kAXFocusedWindowAttribute, kAXPositionAttribute,
+    kAXSizeAttribute, kAXWindowsAttribute, pid_t,
 };
 use cocoa::{
     appkit::NSRunningApplication,
@@ -37,6 +37,7 @@ use snafu::ResultExt;
 use crate::{
     AXErrorExt, BundleID, UnnamedError,
     layout::AXRect,
+    magic,
     memory::{CopyOnWrite, ManageWithRc, Rc, Unique},
 };
 
@@ -45,6 +46,7 @@ pub enum AccessibilityElementKey {
     Position,
     Size,
     Windows,
+    FocusedWindow,
 }
 
 pub fn create_cfstring_from_static_str(
@@ -73,6 +75,7 @@ impl AccessibilityElementKey {
             AccessibilityElementKey::Position => kAXPositionAttribute,
             AccessibilityElementKey::Size => kAXSizeAttribute,
             AccessibilityElementKey::Windows => kAXWindowsAttribute,
+            AccessibilityElementKey::FocusedWindow => kAXFocusedWindowAttribute,
         };
 
         create_cfstring_from_static_str(string)
@@ -134,6 +137,37 @@ pub trait AccessibilityElement {
 
         // SAFETY: todo
         unsafe { Rc::new_const(result) }.ok_or(UnnamedError::UnexpectedNull)
+    }
+
+    /// Behaves like [`AccessibilityElement::get`] but does not wrap the pointer
+    /// in an [`Rc`], so use with caution. The only check it does it for nullity
+    /// (in which case it returns `None`).
+    ///
+    /// # Safety
+    ///
+    /// todo
+    unsafe fn get_raw(
+        &self,
+        key: AccessibilityElementKey,
+    ) -> Result<Option<CFTypeRef>, UnnamedError> {
+        let key_cfstring = key.as_cfstring().whatever_context(
+            "Failed to construct CFString from accessibility key",
+        )?;
+
+        let mut result = ptr::null();
+
+        // SAFETY: todo
+        unsafe {
+            AXUIElementCopyAttributeValue(
+                self.inner(),
+                key_cfstring.get(),
+                &mut result,
+            )
+        }
+        .into_result()?;
+
+        // SAFETY: todo
+        Ok(if result.is_null() { None } else { Some(result) })
     }
 }
 
@@ -244,7 +278,34 @@ impl<'a> App<'a> {
 
         Ok(ax_windows.into_boxed_slice())
     }
+
+    pub fn focused_window(&self) -> Result<Option<Window>, UnnamedError> {
+        let focused_window_opt =
+            // SAFETY: todo
+            unsafe { self.get_raw(AccessibilityElementKey::FocusedWindow) }
+                .whatever_context(
+                    "Failed to get optional focused window for the app",
+                )?;
+        if let Some(focused_window) = focused_window_opt {
+            let focused_window_rc = 
+            // SAFETY: todo
+            unsafe {
+                    (focused_window as AXUIElementRef)
+                        .into_rc()
+            }
+                        .expect("`get_raw` will not return `Some` if the pointer inside is null");
+            Ok(Some(Window {
+                inner: CopyOnWrite::Owned(focused_window_rc),
+                bundle_id: self.bundle_id.to_string(),
+            }))
+        } else {
+            Ok(None)
+        }
+    }
 }
+
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
+pub struct WindowMagicId(u32);
 
 pub struct Window {
     inner: CopyOnWrite<AXUIElementRef>,
@@ -336,5 +397,19 @@ impl Window {
 
     pub fn bundle_id(&self) -> BundleID {
         BundleID(&self.bundle_id)
+    }
+
+    pub fn magic_id(&self) -> Result<WindowMagicId, UnnamedError> {
+        let mut id = 0u32;
+
+        // SAFETY: `self.inner` is non-null and `&mut id` is the sole mutable
+        // (non-null) reference to `id`.
+        unsafe {
+            magic::_AXUIElementGetWindow(self.inner.get(), &mut id)
+                .into_result()
+                .whatever_context("Failed to get magic window ID")?;
+        }
+
+        Ok(WindowMagicId(id))
     }
 }
